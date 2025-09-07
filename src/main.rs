@@ -1,8 +1,13 @@
-use std::env;
+use std::{env, path::PathBuf};
 
 fn main() {
-    let args:Vec<String> = env::args().collect();
-    let path = &args[1];
+    let path = env::args().nth(1).unwrap();
+    let arg = Cli {
+        path: PathBuf::from(path),
+    };
     println!("Music Player!");
-    println!("File path: {}",path);
+    println!("File path: {:?}", arg.path);
+}
+struct Cli {
+    path: PathBuf,
 }
