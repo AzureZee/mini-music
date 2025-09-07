@@ -1,13 +1,14 @@
-use std::{env, path::PathBuf};
+use clap::Parser;
+use std::path::PathBuf;
 
 fn main() {
-    let path = env::args().nth(1).unwrap();
-    let arg = Cli {
-        path: PathBuf::from(path),
-    };
+    let arg = Cli::parse();
     println!("Music Player!");
     println!("File path: {:?}", arg.path);
 }
+
+#[derive(Parser)]
 struct Cli {
+    /// 要读取的文件路径
     path: PathBuf,
 }
