@@ -1,5 +1,6 @@
 use clap::Parser;
-use rodio::OutputStreamBuilder;
+#[allow(unused_imports)]
+use rodio::{Decoder, OutputStreamBuilder, Sink};
 #[allow(unused_imports)]
 use std::{fs::File, io::BufReader, path::PathBuf, thread, time};
 
