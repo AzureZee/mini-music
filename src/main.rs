@@ -9,10 +9,15 @@ use crossterm::{
 use rodio::{Decoder, OutputStreamBuilder, Sink};
 #[allow(unused_imports)]
 use std::{fs::File, io::BufReader, path::PathBuf, thread};
+#[allow(unused_imports)]
 use std::{
-    io::{self, Write}, process::exit, sync::{
-        atomic::{AtomicBool, Ordering}, Arc
-    }, time::Duration
+    io::{self, Write},
+    process::exit,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 fn main() {
@@ -41,32 +46,23 @@ fn main() {
     sink.append(source);
 
     // 播放状态
-    let is_pause = Arc::new(AtomicBool::new(false));
+    let mut is_pause = false;
 
     // 进入终端`raw mode`
     enable_raw_mode().expect("Enable Error!");
     println!("{}", "\n空格=播放/暂停, q=退出\n".green());
 
-    // 后台线程: 控制播放
-    let is_pause_2 = Arc::clone(&is_pause);
-    thread::spawn(move || {
-        loop {
-            if is_pause_2.load(Ordering::Relaxed) {
-                sink.pause();
-                print!("{}","\r   󰙣    󰙡   ".on_bright_blue());
-                io::stdout().flush().unwrap();
-            } else {
-                sink.play();
-                print!("{}","\r   󰙣    󰙡   ".on_bright_blue());
-                io::stdout().flush().unwrap();
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-    });
-
-    // 主线程: 监听KeyEvent
-
     loop {
+        // 控制播放
+        if is_pause {
+            sink.pause();
+            print!("{}", "\r   󰙣    󰙡   ".on_bright_blue());
+            io::stdout().flush().unwrap();
+        } else {
+            sink.play();
+            print!("{}", "\r   󰙣    󰙡   ".on_bright_blue());
+            io::stdout().flush().unwrap();
+        }
         // 监听KeyEvent
         if event::poll(Duration::from_millis(200)).expect("Poll Error!") {
             if let Event::Key(key) = event::read().expect("Read Error!") {
@@ -75,7 +71,7 @@ fn main() {
                 }
                 match key.code {
                     KeyCode::Char(' ') => {
-                        is_pause.fetch_xor(true, Ordering::Relaxed);
+                        is_pause = !is_pause;
                     }
                     KeyCode::Char('q') => break,
                     _ => {}
