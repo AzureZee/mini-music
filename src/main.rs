@@ -1,5 +1,6 @@
 use clap::Parser;
 use rodio::OutputStreamBuilder;
+#[allow(unused_imports)]
 use std::{fs::File, io::BufReader, path::PathBuf, thread, time};
 
 fn main() {
@@ -11,9 +12,9 @@ fn main() {
     let stream_handle = OutputStreamBuilder::open_default_stream().unwrap();
     let file = BufReader::new(File::open(arg.path).unwrap());
     // 创建一个新的接收器，并在流上开始播放。
-    let _sink = rodio::play(&stream_handle.mixer(), file).unwrap();
-
-    thread::sleep(time::Duration::from_secs(10));
+    let sink = rodio::play(&stream_handle.mixer(), file).unwrap();
+    sink.sleep_until_end();
+    // thread::sleep(time::Duration::from_secs(10));
 }
 
 #[derive(Parser)]
