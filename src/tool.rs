@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
+use symphonia::core::meta::{MetadataOptions, StandardTagKey};
 use symphonia::core::probe::Hint;
 
 pub fn get_metadata(path:&PathBuf) -> Result<(), Error> {
@@ -31,20 +31,31 @@ pub fn get_metadata(path:&PathBuf) -> Result<(), Error> {
 
     let mut format = probed.format;
 
+    //
+    let mut lyrics_found = false;
+
     // 3. 访问并打印元数据
     // 优先使用最新的元数据或内嵌的元数据
     if let Some(metadata_rev) = format.metadata().current() {
+        //
         let tags = metadata_rev.tags();
         if tags.is_empty() {
             println!("未找到元数据标签。");
         } else {
             println!("找到的元数据标签:");
             for tag in tags {
-                // 打印标签的键和值
-                let key = &tag.key ;
-                println!("  {}: {}", key, tag.value);
-                
+                // 打印Lricis
+                if let Some(StandardTagKey::Lyrics) = tag.std_key {
+                    println!("--- 歌词 ---");
+                    println!("{}", tag.value);
+                    println!("------------");
+                    lyrics_found = true;
+                    break;
+                }
             }
+        }
+        if !lyrics_found {
+            println!("No Found Lricis");
         }
     } else {
         println!("此文件没有元数据。");
