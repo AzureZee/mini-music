@@ -19,6 +19,8 @@ use std::{
     },
     time::Duration,
 };
+mod tool;
+use tool::get_metadata;
 
 fn main() {
     // 更优雅地`ctrl+c`退出
@@ -32,6 +34,8 @@ fn main() {
     let arg = Cli::parse();
     println!("Music Player!");
     println!("File path: {:?}", arg.path);
+
+    get_metadata(&arg.path).expect("get_metadata error");
 
     // 获取处理默认音频设备输出流的句柄
     let stream_handle = OutputStreamBuilder::open_default_stream().unwrap();

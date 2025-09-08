@@ -183,6 +183,7 @@ dependencies = [
  "crossterm",
  "ctrlc",
  "rodio",
+ "symphonia",
 ]
 
 [[package]]

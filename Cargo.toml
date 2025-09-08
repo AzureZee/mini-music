@@ -9,3 +9,4 @@ ctrlc = "3.5.0"
 colored = "3.0.0"
 clap = { version = "4.5.47", features = ["derive"] }
 crossterm = "0.29.0"
+symphonia = "0.5.4"
