@@ -1,6 +1,6 @@
 use clap::Parser;
-use rodio::{Decoder, OutputStreamBuilder, Sink};
-use std::{fs::File, path::PathBuf, thread, time};
+use rodio::OutputStreamBuilder;
+use std::{fs::File, io::BufReader, path::PathBuf, thread, time};
 
 fn main() {
     println!("Music Player!");
@@ -9,11 +9,9 @@ fn main() {
 
     // 获取对物理设备的输出流句柄
     let stream_handle = OutputStreamBuilder::open_default_stream().unwrap();
-    let file = File::open(arg.path).unwrap();
+    let file = BufReader::new(File::open(arg.path).unwrap());
     // 创建一个新的接收器，并在流上开始播放。
-    let _sink = Sink::connect_new(&stream_handle.mixer());
-    let source = Decoder::try_from(file).unwrap();
-    stream_handle.mixer().add(source);
+    let _sink = rodio::play(&stream_handle.mixer(), file).unwrap();
 
     thread::sleep(time::Duration::from_secs(10));
 }
