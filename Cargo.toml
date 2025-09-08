@@ -8,3 +8,4 @@ rodio = { version = "0.21.1", features = ["symphonia-all"] }
 ctrlc = "3.5.0"
 colored = "3.0.0"
 clap = { version = "4.5.47", features = ["derive"] }
+crossterm = "0.29.0"
