@@ -1,7 +1,6 @@
+#![allow(unused)]
 use std::fs::File;
-#[allow(unused)]
 use std::io::BufReader;
-#[allow(unused)]
 use std::path::{Path, PathBuf};
 use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;

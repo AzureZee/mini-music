@@ -10,3 +10,4 @@ colored = "3.0.0"
 clap = { version = "4.5.47", features = ["derive"] }
 crossterm = "0.29.0"
 symphonia = "0.5.4"
+anyhow = "1.0.99"
