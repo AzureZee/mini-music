@@ -1,13 +1,27 @@
 #![allow(unused)]
+use anyhow::Result;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
+use anyhow::Context;
+use crossterm::cursor::MoveToColumn;
+use crossterm::execute;
+use crossterm::terminal::{Clear, ClearType};
 use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTagKey};
 use symphonia::core::probe::Hint;
 
+/// 清理之前的残留字符
+pub fn clear_line()->Result<()>{
+    execute!(
+        io::stdout(),
+        MoveToColumn(0), // 移动光标到行首
+        Clear(ClearType::CurrentLine), // 清除当前行
+    ).context("Failed to clear terminal line")?;
+    Ok(())
+}
 pub fn get_metadata(path:&PathBuf) -> Result<(), Error> {
     // 1. 创建媒体源流
     let src = File::open(path).expect("无法打开文件");
