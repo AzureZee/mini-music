@@ -108,15 +108,15 @@ impl Player {
         let total = self.audio_list.as_ref().unwrap().len();
         self.audio_total = total as u32;
         println!("Found {} audio.", total.to_string().yellow());
-        // 进入终端`raw mode`
-        enable_raw_mode()?;
+        // // 进入终端`raw mode`
+        // enable_raw_mode()?;
         //
         self.play()?;
         //
         self.key_event()?;
 
-        // 退出`raw mode`
-        disable_raw_mode()?;
+        // // 退出`raw mode`
+        // disable_raw_mode()?;
         println!("\nBye");
 
         Ok(())
@@ -124,7 +124,7 @@ impl Player {
 
     /// 根据索引执行播放
     pub fn play(&mut self) -> Result<()> {
-        //
+        //  切换前清空并新建Sink
         if !self.sink.is_paused() {
             self.sink.stop();
             self.sink = Sink::connect_new(&self.stream_handle.mixer());
@@ -158,8 +158,25 @@ impl Player {
         }
     }
 
+    /// 列表循环播放
+    pub fn list_loop(&mut self) -> Result<()> {
+        if self.sink.empty() {
+            if self.current_audio_idx == self.audio_total {
+                self.current_audio_idx = 1;
+                self.play()?;
+                clear_line()?;
+            } else {
+                self.current_audio_idx += 1;
+                self.play()?;
+                clear_line()?;
+            }
+        }
+        Ok(())
+    }
     /// 监听键盘,控制播放
     pub fn key_event(&mut self) -> anyhow::Result<()> {
+        // 进入终端`raw mode`
+        enable_raw_mode()?;
         loop {
             // 打印播放进度
             let minutes = self.sink.get_pos().as_secs() / 60;
@@ -175,17 +192,7 @@ impl Player {
             io::stdout().flush()?;
 
             // 自动切歌
-            if self.sink.empty() {
-                if self.current_audio_idx == self.audio_total {
-                    self.current_audio_idx = 1;
-                    self.play()?;
-                    clear_line()?;
-                } else {
-                    self.current_audio_idx += 1;
-                    self.play()?;
-                    clear_line()?;
-                }
-            }
+            self.list_loop()?;
 
             if event::poll(Duration::from_millis(200))? {
                 if let Event::Key(key) = event::read()? {
@@ -208,10 +215,8 @@ impl Player {
                             } else {
                                 self.current_audio_idx += 1;
                             }
-                            // self.sink.get_pos();
                             self.play()?;
                             clear_line()?;
-                            // println!("sink len:{:?}",self.sink.get_pos())
                         }
                         // 左方向键
                         KeyCode::Left => {
@@ -233,6 +238,8 @@ impl Player {
                 }
             }
         }
+        // 退出`raw mode`
+        disable_raw_mode()?;
         Ok(())
     }
 
@@ -264,8 +271,8 @@ impl Player {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use super::*;
+    use std::path::Path;
     pub fn open(path: &Path) -> String {
         if !fs::metadata(path).unwrap().is_dir() {
             let err = format!("Error");
