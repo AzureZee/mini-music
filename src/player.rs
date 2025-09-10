@@ -2,7 +2,8 @@ use anyhow::{Result, anyhow};
 use clap::ArgMatches;
 use colored::Colorize;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
+use crossterm::{cursor, execute};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
 use std::io::Write;
 use std::time::Duration;
@@ -12,7 +13,7 @@ use std::{
     io::{self, BufReader, ErrorKind},
 };
 
-use crate::player::tool::clear_line;
+use tool::load_and_parse_lrc;
 mod tool;
 
 /// 主结构体,代表CLI音乐播放器.
@@ -34,6 +35,10 @@ pub struct Player {
     audio_total: u32,
     /// 当前播放的总时长
     total_time: String,
+    /// 解析后的当前歌曲歌词列表 (时间, 文本)
+    lyrics: Option<Vec<(Duration, String)>>,
+    /// 当前显示的歌词行
+    current_lrc: String,
     /*
     [是否正在播放]直接使用Sink自有方法.is_paused判断,无需手动维护状态
     is_playing: bool,
@@ -87,6 +92,8 @@ impl Player {
             audio_list: Some(HashMap::new()),
             current_audio_idx: 1,
             audio_total: 0,
+            lyrics: None,
+            current_lrc: String::new(),
             is_loop: false, //占位
         })
     }
@@ -108,15 +115,11 @@ impl Player {
         let total = self.audio_list.as_ref().unwrap().len();
         self.audio_total = total as u32;
         println!("Found {} audio.", total.to_string().yellow());
-        // // 进入终端`raw mode`
-        // enable_raw_mode()?;
         //
         self.play()?;
         //
         self.key_event()?;
 
-        // // 退出`raw mode`
-        // disable_raw_mode()?;
         println!("\nBye");
 
         Ok(())
@@ -128,14 +131,22 @@ impl Player {
         if !self.sink.is_paused() {
             self.sink.stop();
             self.sink = Sink::connect_new(&self.stream_handle.mixer());
-        } /* else {
+        } else {
         self.sink.clear();
         self.sink = Sink::connect_new(&self.stream_handle.mixer());
         self.sink.pause();
-        } */
+        }
         //
         if let Some(audio_map) = &self.audio_list {
             if let Some(audio) = audio_map.get(&self.current_audio_idx) {
+                // -- 在这里加载歌词 --
+                // 每次播放新歌曲时，先清空旧歌词
+                self.lyrics = None;
+                self.current_lrc = "".to_string();
+                // 尝试加载并解析歌词
+                self.lyrics = load_and_parse_lrc(&audio.path());
+                // -- 歌词加载结束 --
+
                 let file = BufReader::new(File::open(audio.path())?);
                 let source = Decoder::new(file)?;
                 let src_time = source.total_duration().unwrap().as_secs();
@@ -158,41 +169,78 @@ impl Player {
         }
     }
 
-    /// 列表循环播放
-    pub fn list_loop(&mut self) -> Result<()> {
-        if self.sink.empty() {
-            if self.current_audio_idx == self.audio_total {
-                self.current_audio_idx = 1;
-                self.play()?;
-                clear_line()?;
-            } else {
-                self.current_audio_idx += 1;
-                self.play()?;
-                clear_line()?;
-            }
-        }
-        Ok(())
-    }
     /// 监听键盘,控制播放
     pub fn key_event(&mut self) -> anyhow::Result<()> {
         // 进入终端`raw mode`
         enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        // 隐藏光标以防止闪烁
+        execute!(stdout, cursor::Hide)?;
+        // 在进入循环前，保存一次初始光标位置。
+        // 这是我们两行UI的“锚点”。
+        execute!(stdout, cursor::SavePosition)?;
         loop {
-            // 打印播放进度
-            let minutes = self.sink.get_pos().as_secs() / 60;
-            let seconds = self.sink.get_pos().as_secs() % 60;
+            // --- 1. 数据准备 ---
+            // -- 歌词更新逻辑 --
+            // 获取当前播放位置 self.sink.get_pos()
+            let current_pos = self.sink.get_pos();
+            // 默认无歌词
+            let mut lrc_to_display = "".to_string();
+            // 查找当前应显示的歌词
+            if let Some(lyrics) = &self.lyrics {
+                // 查找最后一个时间点小于等于当前播放时间的歌词, `rfind` 从后往前找，效率更高
+                if let Some((_time, text)) = lyrics.iter().rfind(|(time, _)| *time <= current_pos) {
+                    lrc_to_display = text.clone();
+                }
+            }
+            self.current_lrc = lrc_to_display;
+            // -- 歌词更新逻辑结束 --
+
+            // 打印 播放进度 + 歌词
+            // 准备进度条字符串
+            let minutes = current_pos.as_secs() / 60;
+            let seconds = current_pos.as_secs() % 60;
             let now_time = format!("{:02}:{:02}", minutes, seconds);
-            print!(
-                "\r {}🎶 {} ⌛{}/{}",
-                "Playing".green().bold(),
+            let progress_line = format!(
+                "{}🎶 {} ⌛{}/{}",
+                "Music🌀".green().bold(),
                 self.current_audio.blue(),
                 now_time.blue(),
                 self.total_time.green()
             );
+            // --- 2. 渲染UI ---
+            // 每次循环都回到我们最初保存的锚点
+            execute!(stdout, cursor::RestorePosition)?;
+            //
+            execute!(
+                stdout,
+                // 清除第一行内容
+                Clear(ClearType::UntilNewLine),
+            )?;
+            // 打印进度条
+            print!("{}", progress_line);
+            // 移动到下一行，并清除该行，然后打印歌词
+            // MoveToNextLine(1) 将光标移动到下一行的第0列
+            execute!(
+                stdout,
+                cursor::MoveToNextLine(1),
+                Clear(ClearType::UntilNewLine)
+            )?;
+            // 打印歌词
+            print!("Lyrics🌀{}", self.current_lrc.cyan().bold());
             io::stdout().flush()?;
 
-            // 自动切歌
-            self.list_loop()?;
+            // 自动切歌, 列表循环
+            if self.sink.empty() {
+                if self.current_audio_idx == self.audio_total {
+                    self.current_audio_idx = 1;
+                    self.play()?;
+
+                } else {
+                    self.current_audio_idx += 1;
+                    self.play()?;
+                }
+            }
 
             if event::poll(Duration::from_millis(200))? {
                 if let Event::Key(key) = event::read()? {
@@ -216,7 +264,7 @@ impl Player {
                                 self.current_audio_idx += 1;
                             }
                             self.play()?;
-                            clear_line()?;
+
                         }
                         // 左方向键
                         KeyCode::Left => {
@@ -227,7 +275,6 @@ impl Player {
                             }
 
                             self.play()?;
-                            clear_line()?;
                         }
                         KeyCode::Up => {}
                         KeyCode::Down => {}
@@ -238,8 +285,19 @@ impl Player {
                 }
             }
         }
-        // 退出`raw mode`
+        // --- 4. 退出清理 ---
+        // 循环结束后，清理我们用过的两行UI
+        execute!(
+            stdout,
+            cursor::RestorePosition,      // 回到锚点
+            Clear(ClearType::UntilNewLine), // 清除第一行
+            cursor::MoveToNextLine(1),      // 移动到第二行
+            Clear(ClearType::UntilNewLine), // 清除第二行
+            cursor::RestorePosition,      // 再次回到锚点，以防万一
+            cursor::Show                  // 最后显示光标
+        )?;
         disable_raw_mode()?;
+        println!(); // 确保shell提示符在新行
         Ok(())
     }
 
