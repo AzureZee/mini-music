@@ -18,13 +18,6 @@ use mini_music::Player;
 /// * ←/→：切歌
 /// * Esc：退出
 fn main() -> AnyResult<()> {
-    // [更优雅地`ctrl+c`退出]因为在raw mode监听键盘来退出,暂时无用
-    /*     ctrlc::set_handler(|| {
-        println!("\n{}: Exiting...", "Info".blue());
-        exit(0)
-    })
-    .unwrap(); */
-
     Player::clear_screen();
     // 解析cmdline参数
     let arg = cli_config().get_matches();
