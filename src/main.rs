@@ -1,5 +1,5 @@
 // #![allow(unused)]
-use anyhow::Result;
+use mini_music::{AnyResult,anyhow};
 use colored::*;
 #[allow(unused)]
 use std::process::exit;
@@ -9,7 +9,7 @@ mod player;
 use cli_config::cli_config;
 use player::Player;
 
-fn main() -> Result<()> {
+fn main() -> AnyResult<()> {
     // [更优雅地`ctrl+c`退出]因为在raw mode监听键盘来退出,暂时无用
 /*     ctrlc::set_handler(|| {
         println!("\n{}: Exiting...", "Info".blue());
@@ -21,9 +21,6 @@ fn main() -> Result<()> {
     let arg = cli_config().get_matches();
     println!("Music Player!");
     println!("{}", "\n[空格]播放/暂停 | [Esc]退出 | [←/→]切歌 \n".green());
-    
-    // [获取元数据]暂时禁用, 先实现核心播放功能
-    // get_metadata(&arg.path).expect("get_metadata error");
 
     let mut app = Player::new()?;
     app.run(arg)?;

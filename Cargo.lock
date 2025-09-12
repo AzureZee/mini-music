@@ -190,20 +190,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 
 [[package]]
-name = "cli-music-player"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "colored",
- "crossterm",
- "ctrlc",
- "regex",
- "rodio",
- "symphonia",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,6 +498,20 @@ name = "memchr"
 version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
+
+[[package]]
+name = "mini-music"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "crossterm",
+ "ctrlc",
+ "regex",
+ "rodio",
+ "symphonia",
+]
 
 [[package]]
 name = "mio"
