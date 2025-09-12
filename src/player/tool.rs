@@ -2,11 +2,12 @@
 //!
 //! 提供以下核心功能：
 //! * 从音频元数据中提取歌词
+//! * 从本地`.lrc`文件提取歌词
 //! * 解析LRC格式歌词文件
 //! * 时间戳转换与排序
 use crate::{AnyResult, anyhow};
 use regex::Regex;
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::Path;
 use std::time::Duration;
 use symphonia::core::formats::FormatOptions;
@@ -14,7 +15,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::StandardTagKey;
 use symphonia::core::probe::Hint;
 
-/// 从音频文件元数据提取歌词
+/// 从音频文件元数据或本地`.lrc`文件提取歌词
 ///
 /// # 依赖说明
 /// 使用symphonia库解析音频元数据
@@ -44,48 +45,75 @@ fn get_lyrics(path: &Path) -> AnyResult<String> {
 
     let mut format = probed.format;
 
-    // 3. 访问元数据, 遍历tag, 提取lyrics
-    if let Some(metsdata_rev) = format.metadata().current() {
-        for tag in metsdata_rev.tags() {
-            // 优先检查标准 Key，以兼容其他写入器
-            if let Some(StandardTagKey::Lyrics) = tag.std_key {
-                return Ok(tag.value.to_string());
-            } /*  else if &tag.key == "USLT" {
-            return Ok(tag.value.to_string());
-            }; */
+    // 3. 访问元数据, 遍历tag, 提取lyrics.或者从本地`.lrc`文件提取歌词
+    match format.metadata().current() {
+        Some(metsdata_rev) => {
+            let mut tags = metsdata_rev.tags().iter();
+            if let Some(tag_lrc) = tags.find(|tag| tag.std_key == Some(StandardTagKey::Lyrics)) {
+                return Ok(tag_lrc.value.to_string());
+            } else {
+                return Ok(get_local_lrc(path)?);
+            }
         }
+        None => return Ok(get_local_lrc(path)?),
     }
-    Err(anyhow!("未找到元数据"))
 }
 
-/// 解析LRC歌词文件
+/// 从本地`.lrc`文件提取歌词
+fn get_local_lrc(path: &Path) -> AnyResult<String> {
+    let lrc_path = path.with_extension("lrc");
+    if lrc_path.exists() {
+        let lrc_content = fs::read_to_string(lrc_path)?;
+        Ok(lrc_content)
+    } else {
+        Err(anyhow!("未找到歌词"))
+    }
+}
+/// 解析LRC歌词文件，支持单行多个时间戳。
 ///
 /// # 格式支持
 /// 支持标准LRC格式及扩展时间戳：
 /// [mm:ss.SS] 或 [mm:ss:SSS]
 ///
 /// # 返回值
-/// 返回排序后的(时间戳, 歌词)元组向量
+/// 一个按时间排序的元组向量 `Vec<(Duration, String)>`，
+/// 其中每个元组代表一个时间点和对应的歌词。
 fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
-    let rex = Regex::new(r"\[(\d{2}):(\d{2})[.:](\d{2,3})\](.*)").unwrap();
+    // 这个正则表达式只用于匹配和捕获一个时间戳, 不包含后面的文本部分
+    let timestamp_rex = Regex::new(r"\[(\d{2}):(\d{2})[.:](\d{2,3})\]").unwrap();
     let mut lyrics = Vec::new();
 
     for line in lrc_text.lines() {
-        if let Some(caps) = rex.captures(line) {
-            let minutes: u64 = caps[1].parse().unwrap_or(0);
-            let seconds: u64 = caps[2].parse().unwrap_or(0);
-            let millis_str = &caps[3];
-            let millis: u64 = if millis_str.len() == 2 {
-                // 如果是厘秒, 转为毫秒
-                millis_str.parse().unwrap_or(0) * 10
-            } else {
+        // 1. 找出当前行所有的歌词时间戳
+        // 使用 captures_iter 来迭代所有匹配项
+        let timestamps:Vec<Duration> = timestamp_rex.captures_iter(line).filter_map(|caps|{
+            // 解析分钟、秒和毫秒
+            let minutes:u64 = caps.get(1)?.as_str().parse().ok()?;
+            let seconds:u64 = caps.get(2)?.as_str().parse().ok()?;
+            let millis_str = caps.get(3)?.as_str();
+            let millis:u64 = if millis_str.len()==2 {
+                // 如果是厘秒 (xx)，则乘以10转为毫秒
+                millis_str.parse().unwrap_or(0)*10
+            }else{
+                // 否则直接解析毫秒 (xxx)
                 millis_str.parse().unwrap_or(0)
             };
-
-            let time = Duration::from_millis(minutes * 60 * 1000 + seconds * 1000 + millis);
-            let text = caps[4].trim().to_string();
+            Some(Duration::from_millis(minutes*60*1000+seconds*1000+millis))
+        }).collect();
+        // 如果该行没有任何有效的时间戳 (例如元数据行 [ar: artist]) 则跳过
+        if timestamps.is_empty() {
+            continue;
+        }
+        // 2. 获取歌词文本
+        // 文本是最后一个时间戳 `]` 之后的所有内容
+        if let Some(last_bracket_pos) = line.rfind(']') {
+            let text = line[last_bracket_pos+1..].trim().to_string();
+            // 3. 为每个时间戳创建一条歌词记录
             if !text.is_empty() {
-                lyrics.push((time, text));
+                for time in timestamps {
+                    // text.clone() 是必需的，因为文本内容需要在多个元组中共享
+                    lyrics.push((time,text.clone()));
+                }
             }
         }
     }

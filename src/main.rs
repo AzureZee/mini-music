@@ -25,6 +25,7 @@ fn main() -> AnyResult<()> {
     })
     .unwrap(); */
 
+    Player::clear_screen();
     // 解析cmdline参数
     let arg = cli_config().get_matches();
     println!("Music Player!");

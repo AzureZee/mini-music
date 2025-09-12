@@ -115,9 +115,6 @@ impl Player {
         self.play()?;
         //
         self.run_event_loop()?;
-
-        println!("\nBye");
-
         Ok(())
     }
 
@@ -136,7 +133,7 @@ impl Player {
     fn play(&mut self) -> AnyResult<()> {
         //  切换前清空并新建Sink
         if !self.sink.is_paused() {
-            self.sink.stop();
+            self.sink.clear();
             self.sink = Sink::connect_new(&self.stream_handle.mixer());
         } else {
             self.sink.clear();
@@ -176,6 +173,22 @@ impl Player {
         }
     }
 
+    /// 清除屏幕内容
+    /// 
+    /// 根据操作系统类型调用相应的清屏命令
+    /// Windows系统使用"cls"命令，Unix系统使用"clear"命令
+    pub fn clear_screen() {
+        #[cfg(windows)]
+        std::process::Command::new("cmd")
+            .args(&["/C", "cls"])
+            .status()
+            .ok();
+
+        #[cfg(unix)]
+        std::process::Command::new("clear")
+            .status()
+            .ok();
+    }
     /// UI渲染核心方法
     ///
     /// # 功能说明
@@ -211,7 +224,7 @@ impl Player {
         let now_time = format!("{:02}:{:02}", minutes, seconds);
         let progress_line = format!(
             "{}🎶 {} ⌛{}/{}",
-            "Music🌀".green().bold(),
+            "Music".green().bold(),
             self.current_audio.blue(),
             now_time.blue(),
             self.total_time.green()
@@ -235,7 +248,7 @@ impl Player {
             Clear(ClearType::UntilNewLine)
         )?;
         // 打印歌词
-        print!("Lyrics🌀{}", self.current_lrc.cyan().bold());
+        print!("{}🌀{}","Lyrics".green(), self.current_lrc.cyan().bold());
         io::stdout().flush()?;
         Ok(())
     }
@@ -330,6 +343,7 @@ impl Player {
                     cursor::RestorePosition,        // 再次回到锚点，以防万一
                     cursor::Show                    // 最后显示光标
                 )?;
+                Player::clear_screen();
                 disable_raw_mode()?;
                 exit(0);
             }
