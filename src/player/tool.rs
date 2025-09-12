@@ -1,3 +1,9 @@
+//! 工具模块
+//!
+//! 提供以下核心功能：
+//! * 从音频元数据中提取歌词
+//! * 解析LRC格式歌词文件
+//! * 时间戳转换与排序
 use crate::{AnyResult, anyhow};
 use regex::Regex;
 use std::fs::File;
@@ -8,7 +14,14 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::StandardTagKey;
 use symphonia::core::probe::Hint;
 
-/// 从音频文件元数据中提取原始歌词字符串
+/// 从音频文件元数据提取歌词
+///
+/// # 依赖说明
+/// 使用symphonia库解析音频元数据
+///
+/// # 返回值
+/// * 成功返回歌词字符串
+/// * 失败返回错误信息（未找到元数据）
 fn get_lyrics(path: &Path) -> AnyResult<String> {
     // 1. 创建媒体源流
     let src = File::open(path)?;
@@ -31,22 +44,28 @@ fn get_lyrics(path: &Path) -> AnyResult<String> {
 
     let mut format = probed.format;
 
-    // 3. 访问元数据, 遍历tag, 提取lyrics   
+    // 3. 访问元数据, 遍历tag, 提取lyrics
     if let Some(metsdata_rev) = format.metadata().current() {
         for tag in metsdata_rev.tags() {
             // 优先检查标准 Key，以兼容其他写入器
             if let Some(StandardTagKey::Lyrics) = tag.std_key {
                 return Ok(tag.value.to_string());
-            }/*  else if &tag.key == "USLT" {
-                return Ok(tag.value.to_string());
+            } /*  else if &tag.key == "USLT" {
+            return Ok(tag.value.to_string());
             }; */
         }
     }
     Err(anyhow!("未找到元数据"))
 }
 
-/// 解析LRC格式的歌词字符串
-/// 返回一个元组向量 `(时间点, 歌词文本)`，并按时间排序
+/// 解析LRC歌词文件
+///
+/// # 格式支持
+/// 支持标准LRC格式及扩展时间戳：
+/// [mm:ss.SS] 或 [mm:ss:SSS]
+///
+/// # 返回值
+/// 返回排序后的(时间戳, 歌词)元组向量
 fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
     let rex = Regex::new(r"\[(\d{2}):(\d{2})[.:](\d{2,3})\](.*)").unwrap();
     let mut lyrics = Vec::new();
@@ -119,7 +138,7 @@ pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
     // let mut lyrics_found = false;
 
     // 3. 访问并打印元数据
-    // 
+    //
     if let Some(metadata_rev) = format.metadata().current() {
         //
         let tags = metadata_rev.tags();
@@ -135,7 +154,7 @@ pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
                     tag.std_key,
                     tag.value.to_string().chars().take(70).collect::<String>()
                 );
-                
+
             }
         }
         // if !lyrics_found {

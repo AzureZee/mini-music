@@ -2,7 +2,8 @@
 name = "mini-music"
 version = "0.1.0"
 edition = "2024"
-
+[lib]
+path = "src/lib.rs"
 [dependencies]
 rodio = { version = "0.21.1", features = ["symphonia-all"] }
 ctrlc = "3.5.0"

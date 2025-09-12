@@ -1,4 +1,4 @@
-use crate::{AnyResult,anyhow};
+use crate::{AnyResult, anyhow};
 use clap::ArgMatches;
 use colored::Colorize;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -17,48 +17,63 @@ use std::{
 use tool::load_and_parse_lrc;
 mod tool;
 
-/// 主结构体,代表CLI音乐播放器.
-/// 维护状态`State`并处理所有播放操作`PlaybackOperation`
+/// CLI音乐播放器核心结构体
+///
+/// # 字段说明
+/// * `sink` - 音频播放引擎，管理音频流的播放/暂停/停止
+/// * `stream_handle` - 音频输出流句柄，用于创建新的Sink实例
+/// * `main_dir` - 音乐文件存储目录路径
+/// * `audio_list` - 音乐文件索引映射（索引 -> 文件元数据）
+/// * `current_audio_idx` - 当前播放曲目索引
+/// * `current_audio` - 当前播放文件名（缓存显示用）
+/// * `audio_total` - 总曲目数
+/// * `total_time` - 当前曲目总时长（格式化字符串）
+/// * `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
+/// * `current_lrc` - 当前应显示的歌词行
 pub struct Player {
-    /// 用于播放的音频接收器`Sink`
+    ///`sink` - 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
-    /// 音频输出流`OutputStream`和`OutputStreamHandle`
+    /// `stream_handle` - 音频输出流句柄，用于创建新的Sink实例
     stream_handle: OutputStream,
-    /// 包含音频文件的目录`Directory`
+    /// `main_dir` - 音乐文件存储目录路径
     main_dir: String,
-    /// 目录下所有音频的`HashMap`
+    /// `audio_list` - 音乐文件索引映射（索引 -> 文件元数据）
     audio_list: Option<HashMap<u32, DirEntry>>,
-    /// 当前选择的文件索引
+    /// `current_audio_idx` - 当前播放曲目索引
     current_audio_idx: u32,
-    /// 当前选择的文件名
+    /// `current_audio` - 当前播放文件名（缓存显示用）
     current_audio: String,
-    /// 音频总数
+    /// `audio_total` - 总曲目数
     audio_total: u32,
-    /// 当前播放的总时长
+    /// `total_time` - 当前曲目总时长（格式化字符串）
     total_time: String,
-    /// 解析后的当前歌曲歌词列表 (时间, 文本)
+    /// `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
     lyrics: Option<Vec<(Duration, String)>>,
-    /// 当前显示的歌词行
+    /// `current_lrc` - 当前应显示的歌词行
     current_lrc: String,
 }
 
-
-/// 表示`Player`可处理地所有可能键盘事件`KeyEvent`
-/// 所对应的播放操作`PlaybackOperation`的枚举
-// #[allow(unused)]
-pub enum Operation {
-    //
+/// 键盘操作映射
+///
+/// 每个枚举值对应特定的播放控制功能
+enum Operation {
+    /// 切换播放/暂停状态
     TogglePaused,
-    /// Switch to the previous audio
+    /// 切换到上一首
     Back,
-    /// Switch to the next audio
+    /// 切换到下一首
     Next,
-    //
+    /// 退出播放器
     Exit,
 }
 
 impl Player {
-    /// 初始化Player新实例
+    /// 初始化播放器实例
+    ///
+    /// # 返回值
+    /// 返回包含默认配置的Player实例，此时：
+    /// * 音量初始化为1.0
+    /// * 文件列表为空HashMap
     pub fn new() -> AnyResult<Self> {
         // 获取链接默认音频设备输出流和其句柄
         let stream_handle = OutputStreamBuilder::open_default_stream()?;
@@ -76,7 +91,6 @@ impl Player {
             audio_total: 0,
             lyrics: None,
             current_lrc: String::new(),
-
         })
     }
 
@@ -107,16 +121,27 @@ impl Player {
         Ok(())
     }
 
-    /// 根据索引执行播放
-    pub fn play(&mut self) -> AnyResult<()> {
+    /// 播放指定索引的音频
+    ///
+    /// # 流程说明
+    /// 1. 清理现有播放状态（停止/重置Sink）
+    /// 2. 加载新音频文件并解析元数据
+    /// 3. 初始化播放参数：
+    ///    - 设置初始音量
+    ///    - 更新总时长显示
+    ///    - 缓存文件名
+    ///
+    /// # 错误处理
+    /// * 返回错误时携带颜色化的错误信息
+    fn play(&mut self) -> AnyResult<()> {
         //  切换前清空并新建Sink
         if !self.sink.is_paused() {
             self.sink.stop();
             self.sink = Sink::connect_new(&self.stream_handle.mixer());
         } else {
-        self.sink.clear();
-        self.sink = Sink::connect_new(&self.stream_handle.mixer());
-        self.sink.pause();
+            self.sink.clear();
+            self.sink = Sink::connect_new(&self.stream_handle.mixer());
+            self.sink.pause();
         }
         //
         if let Some(audio_map) = &self.audio_list {
@@ -151,7 +176,18 @@ impl Player {
         }
     }
 
-    fn update_ui(&mut self) ->AnyResult<()>{
+    /// UI渲染核心方法
+    ///
+    /// # 功能说明
+    /// 1. 计算当前播放位置
+    /// 2. 更新歌词显示
+    /// 3. 渲染进度条和歌词界面
+    ///
+    /// # 界面布局
+    /// 采用双行锚定模式：
+    /// 1. 第一行：播放进度条
+    /// 2. 第二行：当前歌词
+    fn update_ui(&mut self) -> AnyResult<()> {
         // --- 1. 数据准备 ---
         // -- 歌词更新逻辑 --
         // 获取当前播放位置 self.sink.get_pos()
@@ -203,8 +239,16 @@ impl Player {
         io::stdout().flush()?;
         Ok(())
     }
-    /// 监听键盘,控制播放
-    pub fn run_event_loop(&mut self) -> AnyResult<()> {
+    /// 主事件循环驱动器
+    ///
+    /// # 功能说明
+    /// 1. 初始化终端raw模式
+    /// 2. 维护UI渲染锚点
+    /// 3. 驱动以下核心循环：
+    ///    - UI刷新
+    ///    - 自动切歌
+    ///    - 键盘事件监听
+    fn run_event_loop(&mut self) -> AnyResult<()> {
         // 进入终端`raw mode`
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -221,7 +265,6 @@ impl Player {
                 if self.current_audio_idx == self.audio_total {
                     self.current_audio_idx = 1;
                     self.play()?;
-
                 } else {
                     self.current_audio_idx += 1;
                     self.play()?;
@@ -231,24 +274,24 @@ impl Player {
         }
     }
 
-    pub fn monitor_key(&mut self)->AnyResult<()> {
+    fn monitor_key(&mut self) -> AnyResult<()> {
         use Operation::*;
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match key.code {
-                        KeyCode::Char(' ') =>{self.key_action(TogglePaused)?},
-                        KeyCode::Right =>{self.key_action(Next)?},
-                        KeyCode::Left =>{self.key_action(Back)?},
-                        KeyCode::Esc => {self.key_action(Exit)?},
-                        _ => {},
+                        KeyCode::Char(' ') => self.key_action(TogglePaused)?,
+                        KeyCode::Right => self.key_action(Next)?,
+                        KeyCode::Left => self.key_action(Back)?,
+                        KeyCode::Esc => self.key_action(Exit)?,
+                        _ => {}
                     }
                 }
             }
         }
         Ok(())
     }
-    pub fn key_action(&mut self,op:Operation)->AnyResult<()> {
+    fn key_action(&mut self, op: Operation) -> AnyResult<()> {
         use Operation::*;
         match op {
             TogglePaused => {
@@ -257,44 +300,44 @@ impl Player {
                 } else {
                     self.sink.pause();
                 }
-            },
-            Next=>{
+            }
+            Next => {
                 if self.current_audio_idx == self.audio_total {
                     self.current_audio_idx = 1
                 } else {
                     self.current_audio_idx += 1;
                 }
                 self.play()?;
-            },
-            Back=>{
+            }
+            Back => {
                 if self.current_audio_idx == 1 {
                     self.current_audio_idx = self.audio_total;
                 } else {
                     self.current_audio_idx -= 1;
                 }
                 self.play()?;
-            }, 
-            Exit=>{
+            }
+            Exit => {
                 self.sink.stop();
                 // --- 4. 退出清理 ---
                 // 循环结束后，清理我们用过的两行UI
                 execute!(
                     io::stdout(),
-                    cursor::RestorePosition,      // 回到锚点
+                    cursor::RestorePosition,        // 回到锚点
                     Clear(ClearType::UntilNewLine), // 清除第一行
                     cursor::MoveToNextLine(1),      // 移动到第二行
                     Clear(ClearType::UntilNewLine), // 清除第二行
-                    cursor::RestorePosition,      // 再次回到锚点，以防万一
-                    cursor::Show                  // 最后显示光标
+                    cursor::RestorePosition,        // 再次回到锚点，以防万一
+                    cursor::Show                    // 最后显示光标
                 )?;
                 disable_raw_mode()?;
                 exit(0);
-            },           
+            }
         }
         Ok(())
     }
     /// 过滤后加载音频列表
-    pub fn load_audio(&mut self) -> AnyResult<()> {
+    fn load_audio(&mut self) -> AnyResult<()> {
         let ext_list = ["mp3", "m4a", "flac", "aac", "wav", "ogg", "ape"];
         //
         let mut index = 1;
