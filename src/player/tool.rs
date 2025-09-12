@@ -86,20 +86,25 @@ fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
     for line in lrc_text.lines() {
         // 1. 找出当前行所有的歌词时间戳
         // 使用 captures_iter 来迭代所有匹配项
-        let timestamps:Vec<Duration> = timestamp_rex.captures_iter(line).filter_map(|caps|{
-            // 解析分钟、秒和毫秒
-            let minutes:u64 = caps.get(1)?.as_str().parse().ok()?;
-            let seconds:u64 = caps.get(2)?.as_str().parse().ok()?;
-            let millis_str = caps.get(3)?.as_str();
-            let millis:u64 = if millis_str.len()==2 {
-                // 如果是厘秒 (xx)，则乘以10转为毫秒
-                millis_str.parse().unwrap_or(0)*10
-            }else{
-                // 否则直接解析毫秒 (xxx)
-                millis_str.parse().unwrap_or(0)
-            };
-            Some(Duration::from_millis(minutes*60*1000+seconds*1000+millis))
-        }).collect();
+        let timestamps: Vec<Duration> = timestamp_rex
+            .captures_iter(line)
+            .filter_map(|caps| {
+                // 解析分钟、秒和毫秒
+                let minutes: u64 = caps.get(1)?.as_str().parse().ok()?;
+                let seconds: u64 = caps.get(2)?.as_str().parse().ok()?;
+                let millis_str = caps.get(3)?.as_str();
+                let millis: u64 = if millis_str.len() == 2 {
+                    // 如果是厘秒 (xx)，则乘以10转为毫秒
+                    millis_str.parse().unwrap_or(0) * 10
+                } else {
+                    // 否则直接解析毫秒 (xxx)
+                    millis_str.parse().unwrap_or(0)
+                };
+                Some(Duration::from_millis(
+                    minutes * 60 * 1000 + seconds * 1000 + millis,
+                ))
+            })
+            .collect();
         // 如果该行没有任何有效的时间戳 (例如元数据行 [ar: artist]) 则跳过
         if timestamps.is_empty() {
             continue;
@@ -107,12 +112,12 @@ fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
         // 2. 获取歌词文本
         // 文本是最后一个时间戳 `]` 之后的所有内容
         if let Some(last_bracket_pos) = line.rfind(']') {
-            let text = line[last_bracket_pos+1..].trim().to_string();
+            let text = line[last_bracket_pos + 1..].trim().to_string();
             // 3. 为每个时间戳创建一条歌词记录
             if !text.is_empty() {
                 for time in timestamps {
                     // text.clone() 是必需的，因为文本内容需要在多个元组中共享
-                    lyrics.push((time,text.clone()));
+                    lyrics.push((time, text.clone()));
                 }
             }
         }
@@ -132,9 +137,9 @@ pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
                 Some(parsed)
             }
         }
-        Err(e) => {
+        Err(_) => {
             // 未找到元数据
-            println!("{:?}", e);
+            // println!("{:?}", e);
             None
         }
     }
