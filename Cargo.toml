@@ -1,10 +1,15 @@
 [package]
-name = "cli-music-player"
+name = "mini-music"
 version = "0.1.0"
 edition = "2024"
-
+[lib]
+path = "src/lib.rs"
 [dependencies]
-rodio = "0.21.1"
+rodio = { version = "0.21.1", features = ["symphonia-all"] }
 ctrlc = "3.5.0"
 colored = "3.0.0"
 clap = { version = "4.5.47", features = ["derive"] }
+crossterm = "0.29.0"
+symphonia = "0.5.4"
+anyhow = "1.0.99"
+regex = "1.11.2"
