@@ -31,26 +31,27 @@ mod tool;
 /// * `total_time` - 当前曲目总时长（格式化字符串）
 /// * `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
 /// * `current_lrc` - 当前应显示的歌词行
+/// * `first_run` - 是否首次运行, 是就不清空Sink
 pub struct Player {
-    ///`sink` - 音频播放引擎，管理音频流的播放/暂停/停止
+    /// 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
-    /// `stream_handle` - 音频输出流句柄，用于创建新的Sink实例
+    /// 音频输出流句柄，用于创建新的Sink实例
     _stream_handle: OutputStream,
-    /// `audio_dir` - 音乐文件存储目录路径
+    /// 音乐文件存储目录路径
     audio_dir: String,
-    /// `audio_list` - 音乐文件索引映射（索引 -> 文件元数据）
+    /// 音乐文件索引映射（索引 -> 文件元数据）
     audio_list: Option<HashMap<u32, WalkDirEntry>>,
-    /// `current_audio_idx` - 当前播放曲目索引
+    /// 当前播放曲目索引
     current_audio_idx: u32,
-    /// `current_audio` - 当前播放文件名（缓存显示用）
+    /// 当前播放文件名（缓存显示用）
     current_audio: String,
-    /// `audio_total` - 总曲目数
+    /// 总曲目数
     audio_total: u32,
-    /// `total_time` - 当前曲目总时长（格式化字符串）
+    /// 当前曲目总时长（格式化字符串）
     total_time: String,
-    /// `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
+    /// 解析后的歌词数据（时间戳 -> 歌词文本）
     lyrics: Option<Vec<(Duration, String)>>,
-    /// `current_lrc` - 当前应显示的歌词行
+    /// 当前应显示的歌词行
     current_lrc: String,
     /// 是否首次运行, 是就不清空Sink
     first_run: bool,
@@ -122,7 +123,7 @@ impl Player {
     ///
     /// # 流程说明
     /// 1. 清理现有播放状态（停止/重置Sink）
-    /// 2. 加载新音频文件并解析元数据
+    /// 2. 加载新音频文件, 加载和解析歌词
     /// 3. 初始化播放参数：
     ///    - 设置初始音量
     ///    - 更新总时长显示
@@ -130,14 +131,12 @@ impl Player {
     fn play(&mut self) -> AnyResult<()> {
         // 首次运行不需要清空
         if !self.first_run {
-            //  切换前清空并新建Sink
+            //  切换前清空Sink
             if !self.sink.is_paused() {
                 self.sink.clear();
                 self.sink.play();
-                // self.sink = Sink::connect_new(&self.stream_handle.mixer());
             } else {
                 self.sink.clear();
-                // self.sink = Sink::connect_new(&self.stream_handle.mixer());
                 self.sink.pause();
             }
         }
@@ -151,16 +150,17 @@ impl Player {
                 // 尝试加载并解析歌词
                 self.lyrics = load_and_parse_lrc(&audio.path());
                 // -- 歌词加载结束 --
-
+                // 解码音频
                 let file = BufReader::new(File::open(audio.path())?);
                 let source = Decoder::new(file)?;
-                let src_time = source.total_duration().unwrap().as_secs();
                 // 获取音频时长
+                let src_time = source.total_duration().unwrap().as_secs();
                 let src_minutes = src_time / 60;
                 let src_seconds = src_time % 60;
                 self.total_time = format!("{:02}:{:02}", src_minutes, src_seconds);
-
+                // 音量初始化
                 self.sink.set_volume(1.0);
+                // 加载音频源, 并开始播放
                 self.sink.append(source);
                 //获取不含扩展名的文件名
                 self.current_audio = audio
@@ -342,8 +342,8 @@ impl Player {
             }
             Exit => {
                 self.sink.stop();
-                // --- 4. 退出清理 ---
-                // 循环结束后，清理用过的两行UI
+                // --- 退出清理 ---
+                // 退出前，清理用过的两行UI
                 execute!(
                     io::stdout(),
                     cursor::RestorePosition,        // 回到锚点
