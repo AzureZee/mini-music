@@ -31,7 +31,7 @@ mod tool;
 /// * `total_time` - 当前曲目总时长（格式化字符串）
 /// * `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
 /// * `current_lrc` - 当前应显示的歌词行
-/// * `first_run` - 是否首次运行, 是就不清空Sink
+/// * `first_play` - 是否首次播放, 是就不清空Sink
 pub struct Player {
     /// 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
@@ -53,8 +53,8 @@ pub struct Player {
     lyrics: Option<Vec<(Duration, String)>>,
     /// 当前应显示的歌词行
     current_lrc: String,
-    /// 是否首次运行, 是就不清空Sink
-    first_run: bool,
+    /// 是否首次播放, 是就不清空Sink
+    first_play: bool,
 }
 
 /// 键盘操作映射
@@ -90,7 +90,7 @@ impl Player {
             audio_total: 0,
             lyrics: None,
             current_lrc: String::new(),
-            first_run: true,
+            first_play: true,
         })
     }
 
@@ -113,7 +113,7 @@ impl Player {
 
         self.play()?;
 
-        self.first_run = false;
+        self.first_play = false;
 
         self.run_event_loop()?;
         Ok(())
@@ -129,8 +129,8 @@ impl Player {
     ///    - 更新总时长显示
     ///    - 缓存文件名
     fn play(&mut self) -> AnyResult<()> {
-        // 首次运行不需要清空
-        if !self.first_run {
+        // 首次播放不需要清空
+        if !self.first_play {
             //  切换前清空Sink
             if !self.sink.is_paused() {
                 self.sink.clear();
