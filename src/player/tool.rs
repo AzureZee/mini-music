@@ -16,13 +16,6 @@ use symphonia::core::meta::StandardTagKey;
 use symphonia::core::probe::Hint;
 
 /// 从音频文件元数据或本地`.lrc`文件提取歌词
-///
-/// # 依赖说明
-/// 使用symphonia库解析音频元数据
-///
-/// # 返回值
-/// * 成功返回歌词字符串
-/// * 失败返回错误信息（未找到元数据）
 fn get_lyrics(path: &Path) -> AnyResult<String> {
     // 1. 创建媒体源流
     let src = File::open(path)?;
@@ -69,11 +62,14 @@ fn get_local_lrc(path: &Path) -> AnyResult<String> {
         Err(anyhow!("未找到歌词"))
     }
 }
-/// 解析LRC歌词文件，支持单行多个时间戳。
+/// 解析LRC歌词文本
 ///
 /// # 格式支持
+/// 1.  标准歌词 (`[mm:ss.xx]Some text`)
+/// 2.  多时间戳歌词 (`[ts1][ts2]Some text`)
+///
 /// 支持标准LRC格式及扩展时间戳：
-/// [mm:ss.SS] 或 [mm:ss:SSS]
+/// `[mm:ss.SS]` 或 `[mm:ss:SSS]`
 ///
 /// # 返回值
 /// 一个按时间排序的元组向量 `Vec<(Duration, String)>`，
