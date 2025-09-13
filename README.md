@@ -54,4 +54,4 @@ src/
 - `symphonia` 读取元数据 同时也是 `rodio`的依赖,用于支持更多格式
 
 ## 许可证
-[MIT License](LICENSE) © 2023 AzureZee
+[MIT License](LICENSE) © 2025 AzureZee
