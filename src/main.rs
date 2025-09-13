@@ -6,24 +6,12 @@ mod cli_config;
 use cli_config::cli_config;
 use mini_music::Player;
 
-/// CLI音乐播放器主程序
-///
-/// # 功能流程
-/// 1. 初始化命令行解析
-/// 2. 创建播放器实例
-/// 3. 启动主事件循环
-///
-/// # 支持的快捷键
-/// * 空格：播放/暂停
-/// * ←/→：切歌
-/// * Esc：退出
+
 fn main() -> AnyResult<()> {
     Player::clear_screen();
     // 解析cmdline参数
     let arg = cli_config().get_matches();
-    println!("Music Player!");
-    println!("{}", "\n[空格]播放/暂停 | [Esc]退出 | [←/→]切歌 \n".green());
-
+    println!("{}", "[Esc]=Exit [Space]=Play/Pause\n[← →/A D]=Prev/Next\n".green());
     let mut app = Player::new()?;
     app.run(arg)?;
     Ok(())
