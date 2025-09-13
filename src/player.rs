@@ -10,9 +10,10 @@ use std::process::exit;
 use std::time::Duration;
 use std::{
     collections::HashMap,
-    fs::{self, DirEntry, File, read_dir},
+    fs::{self, File},
     io::{self, BufReader, ErrorKind},
 };
+use walkdir::{DirEntry as WalkDirEntry, WalkDir};
 
 use tool::load_and_parse_lrc;
 mod tool;
@@ -38,7 +39,7 @@ pub struct Player {
     /// `audio_dir` - 音乐文件存储目录路径
     audio_dir: String,
     /// `audio_list` - 音乐文件索引映射（索引 -> 文件元数据）
-    audio_list: Option<HashMap<u32, DirEntry>>,
+    audio_list: Option<HashMap<u32, WalkDirEntry>>,
     /// `current_audio_idx` - 当前播放曲目索引
     current_audio_idx: u32,
     /// `current_audio` - 当前播放文件名（缓存显示用）
@@ -359,7 +360,7 @@ impl Player {
         }
         Ok(())
     }
-    /// 使用扩展名过滤文件, 加载音频列表
+    /// 使用扩展名过滤文件, 使用`WalkDir`递归遍历目录, 加载音频列表
     fn load_audio(&mut self) -> AnyResult<()> {
         let ext_list = ["mp3", "m4a", "flac", "aac", "wav", "ogg", "ape"];
         //
@@ -367,8 +368,8 @@ impl Player {
         let dir = &self.audio_dir;
 
         if let Some(audio_map) = &mut self.audio_list {
-            for entry in read_dir(dir)? {
-                let entry = entry?;
+            // 使用 WalkDir 递归遍历目录
+            for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if path.is_file() {
                     if let Some(ext) = path.extension() {
@@ -388,6 +389,7 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::read_dir;
     use std::path::Path;
     pub fn open(path: &Path) -> String {
         if !fs::metadata(path).unwrap().is_dir() {
