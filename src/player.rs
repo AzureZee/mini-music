@@ -1,17 +1,17 @@
 use crate::{AnyResult, anyhow};
-use clap::ArgMatches;
 use colored::Colorize;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
 use crossterm::{cursor, execute};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::exit;
 use std::time::Duration;
 use std::{
     collections::HashMap,
-    fs::{self, File},
-    io::{self, BufReader, ErrorKind},
+    fs::File,
+    io::{self, BufReader},
 };
 use walkdir::{DirEntry as WalkDirEntry, WalkDir};
 
@@ -96,21 +96,15 @@ impl Player {
 
     /// 运行播放器
     /// 处理初始化和命令解析
-    pub fn run(&mut self, arg: ArgMatches) -> AnyResult<()> {
-        //  验证目录参数是否正确
-        let dir: &String = arg
-            .get_one("music-dir")
-            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "缺少音频目录!"))?;
-
-        if !fs::metadata(dir)?.is_dir() {
-            return Err(io::Error::new(ErrorKind::NotFound, "目录未找到!").into());
-        }
-
-        self.audio_dir = dir.to_string();
+    pub fn run(&mut self, dir: PathBuf) -> AnyResult<()> {
+        // 缓存目录
+        self.audio_dir = dir.to_string_lossy().into_owned().to_string();
+        // 加载音频列表
         self.load_audio()?;
+        // 计算总曲目数
         let total = self.audio_list.as_ref().unwrap().len();
         self.audio_total = total as u32;
-
+        // 执行首次播放
         self.play()?;
 
         self.first_play = false;
@@ -383,47 +377,5 @@ impl Player {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::read_dir;
-    use std::path::Path;
-    pub fn open(path: &Path) -> String {
-        if !fs::metadata(path).unwrap().is_dir() {
-            let err = format!("Error");
-            return err;
-        }
-        let ok = format!("Ok");
-        ok
-    }
-
-    /// 测试扩展名过滤
-    pub fn filter(path: &Path) -> i32 {
-        let exts = ["mp3", "m4a", "flac", "aac", "wav", "ogg", "ape"];
-        let mut counter = 0;
-        for entry in read_dir(path).unwrap() {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            if path.is_file() {
-                let ext = path.extension().unwrap();
-                if exts.contains(&ext.to_str().unwrap()) {
-                    counter += 1;
-                }
-            }
-        }
-        counter
-    }
-    #[test]
-    fn it_works() {
-        let path = Path::new("C:\\Users\\Admin\\Music");
-        assert_eq!("Ok", open(path))
-    }
-    #[test]
-    fn contains_ext() {
-        let path = Path::new("C:\\Users\\Admin\\Music");
-        assert_eq!(2, filter(path))
     }
 }

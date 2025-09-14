@@ -1,10 +1,3 @@
-//! 工具模块
-//!
-//! 提供以下核心功能：
-//! * 从音频元数据中提取歌词
-//! * 从本地`.lrc`文件提取歌词
-//! * 解析LRC格式歌词文件
-//! * 时间戳转换与排序
 use crate::{AnyResult, anyhow};
 use regex::Regex;
 use std::fs::{self, File};
