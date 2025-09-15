@@ -190,18 +190,8 @@ impl Player {
         #[cfg(unix)]
         std::process::Command::new("clear").status().ok();
     }
-    /// UI渲染核心方法
-    ///
-    /// # 功能说明
-    /// 1. 计算当前播放位置
-    /// 2. 更新歌词显示
-    /// 3. 渲染进度条和歌词界面
-    ///
-    /// # 界面布局
-    /// 采用双行锚定模式：
-    /// 1. 第一行：播放进度条
-    /// 2. 第二行：当前歌词
-    fn update_ui(&mut self) -> AnyResult<()> {
+    /// 更新当前歌词
+    fn update_lrc(&mut self) -> Duration {
         // --- 1. 数据准备 ---
         // -- 歌词更新逻辑 --
         // 获取当前播放位置 self.sink.get_pos()
@@ -216,7 +206,22 @@ impl Player {
             }
         }
         self.current_lrc = lrc_to_display;
+        current_pos
         // -- 歌词更新逻辑结束 --
+    }
+    /// UI渲染核心方法
+    ///
+    /// # 功能说明
+    /// 1. 计算当前播放位置
+    /// 2. 更新歌词显示
+    /// 3. 渲染进度条和歌词界面
+    ///
+    /// # 界面布局
+    /// 采用双行锚定模式：
+    /// 1. 第一行：播放进度条
+    /// 2. 第二行：当前歌词
+    fn update_ui(&mut self) -> AnyResult<()> {
+        let current_pos = self.update_lrc();
 
         // 打印 播放进度 + 歌词
         // 准备进度条字符串
