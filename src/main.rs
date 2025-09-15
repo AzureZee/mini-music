@@ -2,13 +2,8 @@ use std::{
     fs,
     io::{self, ErrorKind},
 };
-
-// #![allow(unused)]
 use colored::*;
-use mini_music::AnyResult;
-mod cli_config;
-
-use cli_config::Args;
+use mini_music::{AnyResult, Args};
 use mini_music::Player;
 
 fn main() -> AnyResult<()> {
