@@ -11,6 +11,7 @@ fn main() -> AnyResult<()> {
     // 解析cmdline参数
     let mut args = Args::new();
     args.get_dir();
+    let mut player = Player::new()?;
     if let Some(dir) = args.dir {
         //  验证目录是否正确
         if !fs::metadata(&dir)?.is_dir() {
@@ -21,9 +22,10 @@ fn main() -> AnyResult<()> {
             "[Esc]=Exit [Space]=Play/Pause\n[← →/A D]=Prev/Next\n".green()
         );
 
-        let mut app = Player::new()?;
-        app.run(dir)?;
+        player.initial(dir)?;
+        
+        Player::run(player)?;
     }
-    Player::clear_screen();
+    // Player::clear_screen();
     Ok(())
 }

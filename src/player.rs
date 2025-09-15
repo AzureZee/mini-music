@@ -6,6 +6,8 @@ use crossterm::{cursor, execute};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 use std::{
     collections::HashMap,
@@ -53,11 +55,12 @@ pub struct Player {
     lyrics: Option<Vec<(Duration, String)>>,
     /// 当前应显示的歌词行
     current_lrc: String,
-    /// 是否首次播放, 是就不清空Sink
+    /// 是否首次播放
     first_play: bool,
     /// 退出标志
     should_exit: bool,
 }
+type SharedPlayer=Arc<Mutex<Player>>;
 
 /// 键盘操作映射
 ///
@@ -74,13 +77,12 @@ enum Operation {
 }
 
 impl Player {
-    /// 初始化播放器实例
+    /// 新建播放器Player实例
     pub fn new() -> AnyResult<Self> {
         // 获取链接默认音频设备输出流和其句柄
         let _stream_handle = OutputStreamBuilder::open_default_stream()?;
         // 创建一个接收器Sink
         let sink = rodio::Sink::connect_new(&_stream_handle.mixer());
-        // sink.pause();
         Ok(Self {
             sink,
             _stream_handle,
@@ -97,9 +99,8 @@ impl Player {
         })
     }
 
-    /// 运行播放器
-    /// 处理初始化和命令解析
-    pub fn run(&mut self, dir: PathBuf) -> AnyResult<()> {
+    /// 初始化播放器
+    pub fn initial(&mut self, dir: PathBuf) -> AnyResult<()> {
         // 缓存目录
         self.audio_dir = dir.to_string_lossy().into_owned().to_string();
         // 加载音频列表
@@ -111,20 +112,57 @@ impl Player {
         self.play()?;
 
         self.first_play = false;
+        Ok(())
+    }
 
-        self.run_event_loop()?;
+    /// 运行播放器
+    /// 
+    pub fn run(player:Player) -> AnyResult<()> {
+        let shared_player = Arc::new(Mutex::new(player));
+        // 进入终端`raw mode`
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        // 隐藏光标以防止闪烁
+        execute!(stdout, cursor::Hide)?;
+        // 在进入循环前，保存一次初始光标位置。
+        // 这是两行UI的“锚点”。
+        execute!(stdout, cursor::SavePosition)?;
+        let ui_handle = Player::ui_thread(Arc::clone(&shared_player));
+        let key_handle = Player::monitor_key_thread(Arc::clone(&shared_player));
+        // 主线程执行循环播放
+        while !shared_player.lock().unwrap().should_exit {
+            {
+                let mut player = shared_player.lock().unwrap();
+                if player.sink.empty() {
+                    if player.current_audio_idx == player.audio_total {
+                        player.current_audio_idx = 1;
+                        player.play()?;
+                    } else {
+                        player.current_audio_idx += 1;
+                        player.play()?;
+                    }
+                }
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        // 等待子线程结束
+        ui_handle.join().unwrap()?;
+        key_handle.join().unwrap()?;
+        // self.run_event_loop()?;
+        // --- 退出清理 ---
+        execute!(
+            io::stdout(),
+            cursor::RestorePosition,        // 回到锚点
+            Clear(ClearType::All), 
+            cursor::Show                    // 最后显示光标
+        )?;
+        disable_raw_mode()?;
+        
         Ok(())
     }
 
     /// 播放指定索引的音频
     ///
-    /// # 流程说明
-    /// 1. 清理现有播放状态（停止/重置Sink）
-    /// 2. 加载新音频文件, 加载和解析歌词
-    /// 3. 初始化播放参数：
-    ///    - 设置初始音量
-    ///    - 更新总时长显示
-    ///    - 缓存文件名
     fn play(&mut self) -> AnyResult<()> {
         // 首次播放不需要清空
         if !self.first_play {
@@ -190,7 +228,7 @@ impl Player {
         #[cfg(unix)]
         std::process::Command::new("clear").status().ok();
     }
-    /// 更新当前歌词
+    /// 更新当前歌词并返回当前播放位置
     fn update_lrc(&mut self) -> Duration {
         // --- 1. 数据准备 ---
         // -- 歌词更新逻辑 --
@@ -260,76 +298,44 @@ impl Player {
         Ok(())
     }
 
-    /// 主事件循环驱动器
-    ///
-    /// # 功能说明
-    /// 1. 初始化终端raw模式
-    /// 2. 维护UI渲染锚点
-    /// 3. 驱动以下核心循环：
-    ///    - UI刷新
-    ///    - 自动切歌
-    ///    - 键盘事件监听
-    fn run_event_loop(&mut self) -> AnyResult<()> {
-        // 进入终端`raw mode`
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        // 隐藏光标以防止闪烁
-        execute!(stdout, cursor::Hide)?;
-        // 在进入循环前，保存一次初始光标位置。
-        // 这是两行UI的“锚点”。
-        execute!(stdout, cursor::SavePosition)?;
-        while !self.should_exit {
-            // UI刷新
-            self.update_ui()?;
-
-            // 自动切歌, 列表循环
-            if self.sink.empty() {
-                if self.current_audio_idx == self.audio_total {
-                    self.current_audio_idx = 1;
-                    self.play()?;
-                } else {
-                    self.current_audio_idx += 1;
-                    self.play()?;
-                }
+    /// 派生子线程, 刷新UI
+    fn ui_thread(shared_player:SharedPlayer)->thread::JoinHandle<AnyResult<()>> {
+        thread::spawn(move||->AnyResult<()>{
+            while !shared_player.lock().unwrap().should_exit {
+                shared_player.lock().unwrap().update_ui()?;
+                thread::sleep(Duration::from_millis(100));
             }
-            // 监听键盘事件
-            self.monitor_key()?;
-        }
-
-        // --- 退出清理 ---
-        // 退出前，清理用过的两行UI
-        execute!(
-            io::stdout(),
-            cursor::RestorePosition,        // 回到锚点
-            Clear(ClearType::UntilNewLine), // 清除第一行
-            cursor::MoveToNextLine(1),      // 移动到第二行
-            Clear(ClearType::UntilNewLine), // 清除第二行
-            cursor::RestorePosition,        // 再次回到锚点，以防万一
-            cursor::Show                    // 最后显示光标
-        )?;
-        disable_raw_mode()?;
-        Ok(())
+            Ok(())
+        })
     }
 
-    /// 监听键盘事件,调用`key_action`执行具体操作
-    fn monitor_key(&mut self) -> AnyResult<()> {
+    /// 派生子线程, 监听键盘事件,调用`key_action`执行具体操作
+    fn monitor_key_thread(shared_player:SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
         use Operation::*;
-        if event::poll(Duration::from_millis(200))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char(' ') => self.key_action(TogglePaused)?,
-                        KeyCode::Char('a') => self.key_action(Prev)?,
-                        KeyCode::Char('d') => self.key_action(Next)?,
-                        KeyCode::Left => self.key_action(Prev)?,
-                        KeyCode::Right => self.key_action(Next)?,
-                        KeyCode::Esc => self.key_action(Exit)?,
-                        _ => {}
+        thread::spawn(move || -> AnyResult<()> {
+            while !shared_player.lock().unwrap().should_exit {
+                
+                if event::poll(Duration::from_millis(100))? {
+                    if let Event::Key(key) = event::read()? {
+                        if key.kind == KeyEventKind::Press {
+                            let op = match key.code {
+                                KeyCode::Char(' ') => Some(TogglePaused),
+                                KeyCode::Char('a') => Some(Prev),
+                                KeyCode::Char('d') => Some(Next),
+                                KeyCode::Left => Some(Prev),
+                                KeyCode::Right => Some(Next),
+                                KeyCode::Esc => Some(Exit),
+                                _ => None,
+                            };
+                            if let Some(op) = op {
+                                shared_player.lock().unwrap().key_action(op)?;
+                            }
+                        }
                     }
                 }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     /// 执行`Operation`变体对应的具体操作
