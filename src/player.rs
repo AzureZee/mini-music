@@ -6,7 +6,6 @@ use crossterm::{cursor, execute};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::exit;
 use std::time::Duration;
 use std::{
     collections::HashMap,
@@ -32,6 +31,7 @@ mod tool;
 /// * `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
 /// * `current_lrc` - 当前应显示的歌词行
 /// * `first_play` - 是否首次播放, 是就不清空Sink
+/// * `should_exit` - 退出标志
 pub struct Player {
     /// 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
@@ -55,6 +55,8 @@ pub struct Player {
     current_lrc: String,
     /// 是否首次播放, 是就不清空Sink
     first_play: bool,
+    /// 退出标志
+    should_exit: bool,
 }
 
 /// 键盘操作映射
@@ -91,6 +93,7 @@ impl Player {
             lyrics: None,
             current_lrc: String::new(),
             first_play: true,
+            should_exit: false,
         })
     }
 
@@ -251,6 +254,7 @@ impl Player {
         io::stdout().flush()?;
         Ok(())
     }
+
     /// 主事件循环驱动器
     ///
     /// # 功能说明
@@ -269,7 +273,8 @@ impl Player {
         // 在进入循环前，保存一次初始光标位置。
         // 这是两行UI的“锚点”。
         execute!(stdout, cursor::SavePosition)?;
-        loop {
+        while !self.should_exit {
+            // UI刷新
             self.update_ui()?;
 
             // 自动切歌, 列表循环
@@ -282,8 +287,23 @@ impl Player {
                     self.play()?;
                 }
             }
+            // 监听键盘事件
             self.monitor_key()?;
         }
+
+        // --- 退出清理 ---
+        // 退出前，清理用过的两行UI
+        execute!(
+            io::stdout(),
+            cursor::RestorePosition,        // 回到锚点
+            Clear(ClearType::UntilNewLine), // 清除第一行
+            cursor::MoveToNextLine(1),      // 移动到第二行
+            Clear(ClearType::UntilNewLine), // 清除第二行
+            cursor::RestorePosition,        // 再次回到锚点，以防万一
+            cursor::Show                    // 最后显示光标
+        )?;
+        disable_raw_mode()?;
+        Ok(())
     }
 
     /// 监听键盘事件,调用`key_action`执行具体操作
@@ -336,20 +356,7 @@ impl Player {
             }
             Exit => {
                 self.sink.stop();
-                // --- 退出清理 ---
-                // 退出前，清理用过的两行UI
-                execute!(
-                    io::stdout(),
-                    cursor::RestorePosition,        // 回到锚点
-                    Clear(ClearType::UntilNewLine), // 清除第一行
-                    cursor::MoveToNextLine(1),      // 移动到第二行
-                    Clear(ClearType::UntilNewLine), // 清除第二行
-                    cursor::RestorePosition,        // 再次回到锚点，以防万一
-                    cursor::Show                    // 最后显示光标
-                )?;
-                Player::clear_screen();
-                disable_raw_mode()?;
-                exit(0);
+                self.should_exit = true;
             }
         }
         Ok(())

@@ -29,5 +29,6 @@ fn main() -> AnyResult<()> {
         let mut app = Player::new()?;
         app.run(dir)?;
     }
+    Player::clear_screen();
     Ok(())
 }
