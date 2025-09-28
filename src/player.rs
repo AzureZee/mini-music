@@ -72,6 +72,10 @@ enum Operation {
     Prev,
     /// 切换到下一首
     Next,
+    /// 快进
+    Forward,
+    /// 后退
+    Backward,
     /// 退出播放器
     Exit,
     /// 手动清屏
@@ -321,10 +325,10 @@ impl Player {
                             let op = match key.code {
                                 KeyCode::Char(' ') => Some(TogglePaused),
                                 KeyCode::Char('c') => Some(Clean),
-                                KeyCode::Char('a') => Some(Prev),
-                                KeyCode::Char('d') => Some(Next),
-                                KeyCode::Left => Some(Prev),
-                                KeyCode::Right => Some(Next),
+                                KeyCode::Left => Some(Backward),
+                                KeyCode::Right => Some(Forward),
+                                KeyCode::Up => Some(Prev),
+                                KeyCode::Down => Some(Next),
                                 KeyCode::Esc => Some(Exit),
                                 _ => None,
                             };
@@ -372,6 +376,26 @@ impl Player {
             }
             Clean => {
                 Player::clear_screen();
+            }
+            Forward => {
+                let jump_duration = Duration::from_secs(5);
+                let current_pos = self.sink.get_pos();
+                self.sink.try_seek(current_pos + jump_duration).unwrap();
+            }
+            Backward => {
+                let current_pos = self.sink.get_pos();
+                let jump_duration = Duration::from_secs(5);
+                let target_pos;
+                match current_pos.cmp(&jump_duration) {
+                    std::cmp::Ordering::Equal | std::cmp::Ordering::Less => {
+                        target_pos = Duration::from_secs(1);
+                        let _ = self.sink.try_seek(target_pos);
+                    }
+                    std::cmp::Ordering::Greater => {
+                        target_pos = current_pos - jump_duration;
+                        let _ = self.sink.try_seek(target_pos);
+                    }
+                }
             }
         }
         Ok(())
