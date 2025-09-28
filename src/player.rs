@@ -60,7 +60,7 @@ pub struct Player {
     /// 退出标志
     should_exit: bool,
 }
-type SharedPlayer=Arc<Mutex<Player>>;
+type SharedPlayer = Arc<Mutex<Player>>;
 
 /// 键盘操作映射
 ///
@@ -74,6 +74,8 @@ enum Operation {
     Next,
     /// 退出播放器
     Exit,
+    /// 手动清屏
+    Clean,
 }
 
 impl Player {
@@ -116,8 +118,8 @@ impl Player {
     }
 
     /// 运行播放器
-    /// 
-    pub fn run(player:Player) -> AnyResult<()> {
+    ///
+    pub fn run(player: Player) -> AnyResult<()> {
         let shared_player = Arc::new(Mutex::new(player));
         // 进入终端`raw mode`
         enable_raw_mode()?;
@@ -148,16 +150,15 @@ impl Player {
         // 等待子线程结束
         ui_handle.join().unwrap()?;
         key_handle.join().unwrap()?;
-        // self.run_event_loop()?;
         // --- 退出清理 ---
         execute!(
             io::stdout(),
-            cursor::RestorePosition,        // 回到锚点
-            Clear(ClearType::All), 
-            cursor::Show                    // 最后显示光标
+            cursor::RestorePosition, // 回到锚点
+            // Clear(ClearType::All),
+            cursor::Show // 最后显示光标
         )?;
         disable_raw_mode()?;
-        
+
         Ok(())
     }
 
@@ -299,8 +300,8 @@ impl Player {
     }
 
     /// 派生子线程, 刷新UI
-    fn ui_thread(shared_player:SharedPlayer)->thread::JoinHandle<AnyResult<()>> {
-        thread::spawn(move||->AnyResult<()>{
+    fn ui_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
+        thread::spawn(move || -> AnyResult<()> {
             while !shared_player.lock().unwrap().should_exit {
                 shared_player.lock().unwrap().update_ui()?;
                 thread::sleep(Duration::from_millis(100));
@@ -310,16 +311,16 @@ impl Player {
     }
 
     /// 派生子线程, 监听键盘事件,调用`key_action`执行具体操作
-    fn monitor_key_thread(shared_player:SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
+    fn monitor_key_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
         use Operation::*;
         thread::spawn(move || -> AnyResult<()> {
             while !shared_player.lock().unwrap().should_exit {
-                
                 if event::poll(Duration::from_millis(100))? {
                     if let Event::Key(key) = event::read()? {
                         if key.kind == KeyEventKind::Press {
                             let op = match key.code {
                                 KeyCode::Char(' ') => Some(TogglePaused),
+                                KeyCode::Char('c') => Some(Clean),
                                 KeyCode::Char('a') => Some(Prev),
                                 KeyCode::Char('d') => Some(Next),
                                 KeyCode::Left => Some(Prev),
@@ -368,6 +369,9 @@ impl Player {
             Exit => {
                 self.sink.stop();
                 self.should_exit = true;
+            }
+            Clean => {
+                Player::clear_screen();
             }
         }
         Ok(())

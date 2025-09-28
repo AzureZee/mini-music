@@ -2,7 +2,7 @@ use std::{
     fs,
     io::{self, ErrorKind},
 };
-use colored::*;
+// use colored::*;
 use mini_music::{AnyResult, Args};
 use mini_music::Player;
 
@@ -17,15 +17,15 @@ fn main() -> AnyResult<()> {
         if !fs::metadata(&dir)?.is_dir() {
             return Err(io::Error::new(ErrorKind::NotFound, "目录未找到!").into());
         }
-        println!(
-            "{}",
-            "[Esc]=Exit [Space]=Play/Pause\n[← →/A D]=Prev/Next\n".green()
-        );
+        // println!(
+        //     "{}",
+        //     "[Esc]=Exit [Space]=Play/Pause\n[← →/A D]=Prev/Next\n".green()
+        // );
 
         player.initial(dir)?;
         
         Player::run(player)?;
     }
-    // Player::clear_screen();
+    Player::clear_screen();
     Ok(())
 }
