@@ -20,7 +20,7 @@ use tool::load_and_parse_lrc;
 mod tool;
 
 /// CLI音乐播放器核心结构体
-/// 
+///
 pub struct Player {
     /// 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
@@ -287,7 +287,11 @@ impl Player {
                         "-".repeat(remaining_progress as usize)
                     )
                 } else {
-                    format!("{}{}<>","<>".blue(), "-".repeat(remaining_progress as usize))
+                    format!(
+                        "{}{}<>",
+                        "<>".blue(),
+                        "-".repeat(remaining_progress as usize)
+                    )
                 }
             }
             _ => {
@@ -400,36 +404,37 @@ impl Player {
                 Player::clear_screen();
             }
             Forward => {
-                let jump_duration = Duration::from_secs(5);
                 let current_pos = self.sink.get_pos();
+                let jump_duration = Duration::from_secs(5);
                 let target_pos = current_pos + jump_duration;
                 if target_pos.as_secs() <= self.src_time {
-                    self.play()?;
-                    self.sink.try_seek(target_pos).unwrap();
+                    self.seek(target_pos)?;
                 } else {
                     let target_pos = Duration::from_secs(self.src_time - 1);
-                    self.play()?;
-                    self.sink.try_seek(target_pos).unwrap();
+                    self.seek(target_pos)?;
                 }
             }
             Backward => {
                 let current_pos = self.sink.get_pos();
                 let jump_duration = Duration::from_secs(5);
                 let target_pos;
-                match current_pos.as_secs().cmp(&jump_duration.as_secs()) {
-                    std::cmp::Ordering::Equal | std::cmp::Ordering::Less => {
-                        target_pos = Duration::from_secs(1);
-                        self.play()?;
-                        let _ = self.sink.try_seek(target_pos);
-                    }
-                    std::cmp::Ordering::Greater => {
-                        target_pos = current_pos - jump_duration;
-                        self.play()?;
-                        let _ = self.sink.try_seek(target_pos);
-                    }
+                if current_pos.as_secs() <= jump_duration.as_secs() {
+                    target_pos = Duration::from_secs(1);
+                    self.seek(target_pos)?;
+                } else {
+                    target_pos = current_pos - jump_duration;
+                    self.seek(target_pos)?;
                 }
             }
         }
+        Ok(())
+    }
+
+    /// 定位到当前音频的指定位置
+    /// 
+    fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
+        self.play()?;
+        let _ = self.sink.try_seek(target_pos);
         Ok(())
     }
     /// 使用扩展名过滤文件, 使用`WalkDir`递归遍历目录, 加载音频列表
