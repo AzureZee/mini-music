@@ -7,7 +7,7 @@ use mini_music::{player::Player, AnyResult, Args};
 fn main() -> AnyResult<()> {
     Player::clear_screen();
     // 解析cmdline参数
-    let mut args = Args::new();
+    let mut args = Args::default();
     args.get_dir();
     let mut player = Player::new()?;
     if let Some(dir) = args.dir {

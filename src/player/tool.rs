@@ -56,12 +56,12 @@ fn get_lyrics(path: &Path) -> AnyResult<String> {
         Some(metsdata_rev) => {
             let mut tags = metsdata_rev.tags().iter();
             if let Some(tag_lrc) = tags.find(|tag| tag.std_key == Some(StandardTagKey::Lyrics)) {
-                return Ok(tag_lrc.value.to_string());
+                Ok(tag_lrc.value.to_string())
             } else {
-                return Ok(get_local_lrc(path)?);
+                get_local_lrc(path)
             }
         }
-        None => return Ok(get_local_lrc(path)?),
+        None => get_local_lrc(path),
     }
 }
 

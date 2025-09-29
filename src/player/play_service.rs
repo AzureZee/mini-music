@@ -73,7 +73,7 @@ impl Player {
         // 获取链接默认音频设备输出流和其句柄
         let _stream_handle = OutputStreamBuilder::open_default_stream()?;
         // 创建一个接收器Sink
-        let sink = rodio::Sink::connect_new(&_stream_handle.mixer());
+        let sink = rodio::Sink::connect_new(_stream_handle.mixer());
         Ok(Self {
             sink,
             _stream_handle,
@@ -164,7 +164,7 @@ impl Player {
                 self.lyrics = None;
                 self.current_lrc = "".to_string();
                 // 尝试加载并解析歌词
-                self.lyrics = load_and_parse_lrc(&audio.path());
+                self.lyrics = load_and_parse_lrc(audio.path());
                 // -- 歌词加载结束 --
                 // 解码音频
                 let file = BufReader::new(File::open(audio.path())?);
@@ -226,7 +226,7 @@ impl Player {
     pub fn clear_screen() {
         #[cfg(windows)]
         std::process::Command::new("cmd")
-            .args(&["/C", "cls"])
+            .args(["/C", "cls"])
             .status()
             .ok();
 
@@ -266,8 +266,8 @@ impl Player {
             }
             _ => 0,
         };
-        // 进度条字符串
-        let progress_line = match progress_total_len - current_progress {
+        // 进度条字符串        
+        match progress_total_len - current_progress {
             // 剩余进度字符长度
             remaining_progress if remaining_progress >= 1 => {
                 if current_progress >= 1 {
@@ -287,8 +287,7 @@ impl Player {
             _ => {
                 format!("<>{}<>", "#".repeat(current_progress as usize).blue())
             }
-        };
-        progress_line
+        }
     }
 
     /// 更新歌曲信息
@@ -333,9 +332,9 @@ impl Player {
         use Operation::*;
         thread::spawn(move || -> AnyResult<()> {
             while !shared_player.lock().unwrap().should_exit {
-                if event::poll(Duration::from_millis(100))? {
-                    if let Event::Key(key) = event::read()? {
-                        if key.kind == KeyEventKind::Press {
+                if event::poll(Duration::from_millis(100))?
+                    && let Event::Key(key) = event::read()?
+                        && key.kind == KeyEventKind::Press {
                             let op = match key.code {
                                 KeyCode::Char(' ') => Some(TogglePaused),
                                 KeyCode::Char('c') => Some(Clean),
@@ -350,8 +349,6 @@ impl Player {
                                 shared_player.lock().unwrap().key_action(op)?;
                             }
                         }
-                    }
-                }
             }
             Ok(())
         })
@@ -435,14 +432,12 @@ impl Player {
             // 使用 WalkDir 递归遍历目录
             for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Some(ext) = path.extension() {
-                        if ext_list.contains(&ext.to_str().unwrap()) {
+                if path.is_file()
+                    && let Some(ext) = path.extension()
+                        && ext_list.contains(&ext.to_str().unwrap()) {
                             audio_map.insert(index, entry);
                             index += 1;
                         }
-                    }
-                }
             }
         }
 

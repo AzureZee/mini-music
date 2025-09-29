@@ -14,6 +14,12 @@ pub struct Args {
     #[arg(short, long)]
     pub dir: Option<PathBuf>,
 }
+impl Default for Args {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Args {
     /// 新建Args实例
     pub fn new() -> Self {
@@ -39,8 +45,8 @@ impl Args {
     }
     /// 打开FileDialog选择目录
     pub fn open_dialog() -> Option<PathBuf> {
-        if let Some(user_dirs) = UserDirs::new() {
-            if let Some(audio_dir) = user_dirs.audio_dir() {
+        if let Some(user_dirs) = UserDirs::new()
+            && let Some(audio_dir) = user_dirs.audio_dir() {
                 // println!("请选择一个文件夹");
                 let folder = FileDialog::new()
                     .set_title("请选择一个文件夹")
@@ -54,7 +60,6 @@ impl Args {
                     none => return none,
                 }
             }
-        }
         None
     }
 
@@ -62,12 +67,11 @@ impl Args {
     fn load_from_conf(&mut self) {
         let conf_path = "mini-conf.ini";
         // 文件不存在就新建
-        if !Path::new(conf_path).exists() {
-            if let Err(e) = fs::File::create(conf_path) {
+        if !Path::new(conf_path).exists()
+            && let Err(e) = fs::File::create(conf_path) {
                 eprintln!("创建文件失败: {}", e);
                 return;
             }
-        }
         let content = match fs::read_to_string(conf_path) {
             Ok(c) => c,
             Err(e) => {
