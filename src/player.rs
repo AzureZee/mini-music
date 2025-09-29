@@ -20,20 +20,7 @@ use tool::load_and_parse_lrc;
 mod tool;
 
 /// CLI音乐播放器核心结构体
-///
-/// # 字段说明
-/// * `sink` - 音频播放引擎，管理音频流的播放/暂停/停止
-/// * `stream_handle` - 音频输出流句柄，用于创建新的Sink实例
-/// * `audio_dir` - 音乐文件存储目录路径
-/// * `audio_list` - 音乐文件索引映射（索引 -> 文件元数据）
-/// * `current_audio_idx` - 当前播放曲目索引
-/// * `current_audio` - 当前播放文件名（缓存显示用）
-/// * `audio_total` - 总曲目数
-/// * `total_time` - 当前曲目总时长（格式化字符串）
-/// * `lyrics` - 解析后的歌词数据（时间戳 -> 歌词文本）
-/// * `current_lrc` - 当前应显示的歌词行
-/// * `first_play` - 是否首次播放, 是就不清空Sink
-/// * `should_exit` - 退出标志
+/// 
 pub struct Player {
     /// 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
@@ -234,9 +221,7 @@ impl Player {
     }
     /// 更新当前歌词并返回当前播放位置
     fn update_lrc(&mut self) -> Duration {
-        // --- 1. 数据准备 ---
-        // -- 歌词更新逻辑 --
-        // 获取当前播放位置 self.sink.get_pos()
+        // 获取当前播放位置
         let current_pos = self.sink.get_pos();
         // 默认无歌词
         let mut lrc_to_display = "".to_string();
@@ -249,7 +234,6 @@ impl Player {
         }
         self.current_lrc = lrc_to_display;
         current_pos
-        // -- 歌词更新逻辑结束 --
     }
     /// UI渲染核心方法
     ///
@@ -263,14 +247,28 @@ impl Player {
     /// 1. 第一行：播放进度条
     /// 2. 第二行：当前歌词
     fn update_ui(&mut self) -> AnyResult<()> {
-        let current_pos = self.update_lrc();
-
-        // 打印 播放进度 + 歌词
-        // 准备进度条字符串
-        let minutes = current_pos.as_secs() / 60;
-        let seconds = current_pos.as_secs() % 60;
+        let current_pos = self.update_lrc().as_secs();
+        // 进度条打印字符长度
+        let progress_total_len = 35;
+        // 每个字符对应的时间范围
+        let seconds_per_char = self.src_time / progress_total_len;
+        // 当前进度字符长度
+        let current_progress = match current_pos / seconds_per_char {
+            result if result >= 1 => {
+                if result <= progress_total_len {
+                    result
+                } else {
+                    progress_total_len
+                }
+            }
+            _ => 0,
+        };
+        // 打印 详细信息 + 进度条 + 歌词
+        // 准备字符串
+        let minutes = current_pos / 60;
+        let seconds = current_pos % 60;
         let now_time = format!("{:02}:{:02}", minutes, seconds);
-        let progress_line = format!(
+        let information = format!(
             "📀 {}/{} 🎧{} ⏳{}/{}",
             self.current_audio_idx.to_string().blue(),
             self.audio_total.to_string().yellow(),
@@ -278,7 +276,25 @@ impl Player {
             now_time.blue(),
             self.total_time.green()
         );
-        // --- 2. 渲染UI ---
+        // 进度条字符串
+        let progress_line = match progress_total_len - current_progress {
+            // 剩余进度字符长度
+            remaining_progress if remaining_progress >= 1 => {
+                if current_progress >= 1 {
+                    format!(
+                        "<>{}{}<>",
+                        "#".repeat(current_progress as usize).blue(),
+                        "-".repeat(remaining_progress as usize)
+                    )
+                } else {
+                    format!("{}{}<>","<>".blue(), "-".repeat(remaining_progress as usize))
+                }
+            }
+            _ => {
+                format!("<>{}<>", "#".repeat(current_progress as usize).blue())
+            }
+        };
+
         // 每次循环都回到最初保存的锚点
         execute!(io::stdout(), cursor::RestorePosition)?;
         //
@@ -286,6 +302,13 @@ impl Player {
             io::stdout(),
             // 清除第一行内容
             Clear(ClearType::UntilNewLine),
+        )?;
+        // 打印歌曲信息
+        print!("{}", information);
+        execute!(
+            io::stdout(),
+            cursor::MoveToNextLine(1),
+            Clear(ClearType::UntilNewLine)
         )?;
         // 打印进度条
         print!("{}", progress_line);
