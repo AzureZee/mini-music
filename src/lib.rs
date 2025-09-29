@@ -1,5 +1,4 @@
-pub use anyhow::{Result as AnyResult, anyhow};
-pub use player::Player;
-pub use cli_config::Args;
-mod player;
 mod cli_config;
+pub mod player;
+pub use cli_config::Args;
+pub use anyhow::{Result as AnyResult, anyhow};

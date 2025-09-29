@@ -1,26 +1,24 @@
-use crate::{AnyResult, anyhow};
+use crate::{AnyResult, anyhow, player::tool::load_and_parse_lrc};
 use colored::Colorize;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
-use crossterm::{cursor, execute};
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEventKind},
+    execute,
+    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
+};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
-use std::io::Write;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, BufReader},
+    io::{self, BufReader, Write},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 use walkdir::{DirEntry as WalkDirEntry, WalkDir};
 
-use tool::load_and_parse_lrc;
-mod tool;
-
 /// CLI音乐播放器核心结构体
-///
 pub struct Player {
     /// 音频播放引擎，管理音频流的播放/暂停/停止
     sink: rodio::Sink,
@@ -71,7 +69,6 @@ enum Operation {
 
 impl Player {
     /// 新建播放器Player实例
-    ///
     pub fn new() -> AnyResult<Self> {
         // 获取链接默认音频设备输出流和其句柄
         let _stream_handle = OutputStreamBuilder::open_default_stream()?;
@@ -108,7 +105,6 @@ impl Player {
     }
 
     /// 运行播放器
-    ///
     pub fn run(player: Player) -> AnyResult<()> {
         let shared_player = Arc::new(Mutex::new(player));
         // 进入终端`raw mode`
@@ -116,8 +112,7 @@ impl Player {
         let mut stdout = io::stdout();
         // 隐藏光标以防止闪烁
         execute!(stdout, cursor::Hide)?;
-        // 在进入循环前，保存一次初始光标位置。
-        // 这是两行UI的“锚点”。
+        // 保存初始光标位置。
         execute!(stdout, cursor::SavePosition)?;
         let ui_handle = Player::ui_thread(Arc::clone(&shared_player));
         let key_handle = Player::monitor_key_thread(Arc::clone(&shared_player));
@@ -141,11 +136,10 @@ impl Player {
         // 等待子线程结束
         ui_handle.join().unwrap()?;
         key_handle.join().unwrap()?;
-        // --- 退出清理 ---
+        // 退出终端`raw mode`
         execute!(
             io::stdout(),
             cursor::RestorePosition, // 回到锚点
-            // Clear(ClearType::All),
             cursor::Show // 最后显示光标
         )?;
         disable_raw_mode()?;
@@ -154,7 +148,6 @@ impl Player {
     }
 
     /// 播放指定索引的音频
-    ///
     fn play(&mut self) -> AnyResult<()> {
         //  切换前清空Sink
         if !self.sink.is_paused() {
@@ -207,7 +200,6 @@ impl Player {
     }
 
     /// 打印详细信息 + 进度条 + 歌词
-    ///
     fn update_ui(&mut self) -> AnyResult<()> {
         let current_pos = self.update_lrc().as_secs();
         // 准备字符串
@@ -231,7 +223,6 @@ impl Player {
     }
 
     /// 清除屏幕内容
-    ///
     pub fn clear_screen() {
         #[cfg(windows)]
         std::process::Command::new("cmd")
@@ -243,7 +234,6 @@ impl Player {
         std::process::Command::new("clear").status().ok();
     }
     /// 更新当前歌词并返回当前播放位置
-    ///
     fn update_lrc(&mut self) -> Duration {
         // 获取当前播放位置
         let current_pos = self.sink.get_pos();
@@ -260,7 +250,6 @@ impl Player {
         current_pos
     }
     /// 更新进度条
-    ///
     fn update_progress_line(&mut self, current_pos: u64) -> String {
         // 进度条打印字符长度
         let progress_total_len = 35;
@@ -303,7 +292,6 @@ impl Player {
     }
 
     /// 更新歌曲信息
-    ///
     fn update_info(&mut self, current_pos: u64) -> String {
         let minutes = current_pos / 60;
         let seconds = current_pos % 60;
@@ -320,7 +308,6 @@ impl Player {
     }
 
     /// 移动到下一行，并清除该行.
-    ///
     fn move_and_clear_new_line() -> AnyResult<()> {
         execute!(
             io::stdout(),
@@ -432,7 +419,6 @@ impl Player {
     }
 
     /// 定位到当前音频的指定位置
-    ///
     fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
         self.play()?;
         let _ = self.sink.try_seek(target_pos);

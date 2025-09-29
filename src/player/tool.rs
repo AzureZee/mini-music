@@ -1,12 +1,32 @@
 use crate::{AnyResult, anyhow};
 use regex::Regex;
-use std::fs::{self, File};
-use std::path::Path;
-use std::time::Duration;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::StandardTagKey;
-use symphonia::core::probe::Hint;
+use std::{
+    fs::{self, File},
+    path::Path,
+    time::Duration,
+};
+use symphonia::core::{
+    formats::FormatOptions, io::MediaSourceStream, meta::StandardTagKey, probe::Hint,
+};
+
+///  加载并解析一个音频文件的歌词
+pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
+    match get_lyrics(path) {
+        Ok(lrc_string) => {
+            let parsed = parse_lrc(&lrc_string);
+            if parsed.is_empty() {
+                None
+            } else {
+                Some(parsed)
+            }
+        }
+        Err(_) => {
+            // 未找到元数据
+            // println!("{:?}", e);
+            None
+        }
+    }
+}
 
 /// 从音频文件元数据或本地`.lrc`文件提取歌词
 fn get_lyrics(path: &Path) -> AnyResult<String> {
@@ -114,77 +134,3 @@ fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
     lyrics.sort_by(|a, b| a.0.cmp(&b.0));
     lyrics
 }
-
-///  加载并解析一个音频文件的歌词
-pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
-    match get_lyrics(path) {
-        Ok(lrc_string) => {
-            let parsed = parse_lrc(&lrc_string);
-            if parsed.is_empty() {
-                None
-            } else {
-                Some(parsed)
-            }
-        }
-        Err(_) => {
-            // 未找到元数据
-            // println!("{:?}", e);
-            None
-        }
-    }
-}
-
-/* pub fn get_metadata(path:&Path) -> AnyResult<()> {
-    // 1. 创建媒体源流
-    let src = File::open(path).expect("无法打开文件");
-    let mss = MediaSourceStream::new(Box::new(src), Default::default());
-
-    // 2. 探测格式
-    // 创建一个 Hint 来帮助探测。如果文件有扩展名，这会很有用。
-    let mut hint = Hint::new();
-    if let Some(extension) = path.extension().and_then(|s| s.to_str()) {
-        hint.with_extension(extension);
-    }
-
-    // 默认的探测选项和元数据选项
-    let format_opts: FormatOptions = Default::default();
-    let metadata_opts: MetadataOptions = Default::default();
-
-    // 探测媒体源的格式
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)?;
-
-    let mut format = probed.format;
-
-    //
-    // let mut lyrics_found = false;
-
-    // 3. 访问并打印元数据
-    //
-    if let Some(metadata_rev) = format.metadata().current() {
-        //
-        let tags = metadata_rev.tags();
-        if tags.is_empty() {
-            println!("未找到元数据标签。");
-        } else {
-            println!("找到的元数据标签:");
-            for (i,tag) in tags.iter().enumerate() {
-                println!(
-                    "  标签 #{}: Key={:?}, StdKey={:?}, Value='{}...'",
-                    i + 1,
-                    tag.key,
-                    tag.std_key,
-                    tag.value.to_string().chars().take(70).collect::<String>()
-                );
-
-            }
-        }
-        // if !lyrics_found {
-        //     println!("No Found Lricis");
-        // }
-    } else {
-        println!("此文件没有元数据。");
-    }
-
-    Ok(())
-} */
