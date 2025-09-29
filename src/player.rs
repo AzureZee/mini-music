@@ -49,14 +49,14 @@ pub struct Player {
     current_audio: String,
     /// 总曲目数
     audio_total: u32,
-    /// 当前曲目总时长（格式化字符串）
+    /// 当前曲目总时长
+    src_time: u64,
+    /// 当前曲目总时长的格式化字符串
     total_time: String,
     /// 解析后的歌词数据（时间戳 -> 歌词文本）
     lyrics: Option<Vec<(Duration, String)>>,
     /// 当前应显示的歌词行
     current_lrc: String,
-    /// 是否首次播放
-    first_play: bool,
     /// 退出标志
     should_exit: bool,
 }
@@ -98,9 +98,9 @@ impl Player {
             audio_list: Some(HashMap::new()),
             current_audio_idx: 1,
             audio_total: 0,
+            src_time: 0,
             lyrics: None,
             current_lrc: String::new(),
-            first_play: true,
             should_exit: false,
         })
     }
@@ -116,8 +116,6 @@ impl Player {
         self.audio_total = total as u32;
         // 执行首次播放
         self.play()?;
-
-        self.first_play = false;
         Ok(())
     }
 
@@ -140,6 +138,7 @@ impl Player {
             {
                 let mut player = shared_player.lock().unwrap();
                 if player.sink.empty() {
+                    // eprintln!("sink is empty");
                     if player.current_audio_idx == player.audio_total {
                         player.current_audio_idx = 1;
                         player.play()?;
@@ -169,16 +168,12 @@ impl Player {
     /// 播放指定索引的音频
     ///
     fn play(&mut self) -> AnyResult<()> {
-        // 首次播放不需要清空
-        if !self.first_play {
-            //  切换前清空Sink
-            if !self.sink.is_paused() {
-                self.sink.clear();
-                self.sink.play();
-            } else {
-                self.sink.clear();
-                self.sink.pause();
-            }
+        //  切换前清空Sink
+        if !self.sink.is_paused() {
+            self.sink.clear();
+            self.sink.play();
+        } else {
+            self.sink.clear();
         }
         //
         if let Some(audio_map) = &self.audio_list {
@@ -194,10 +189,14 @@ impl Player {
                 let file = BufReader::new(File::open(audio.path())?);
                 let source = Decoder::new(file)?;
                 // 获取音频时长
-                let src_time = source.total_duration().unwrap().as_secs();
+                let src_duration = source
+                    .total_duration()
+                    .unwrap_or_else(|| Duration::from_secs(0));
+                let src_time = src_duration.as_secs();
                 let src_minutes = src_time / 60;
                 let src_seconds = src_time % 60;
                 self.total_time = format!("{:02}:{:02}", src_minutes, src_seconds);
+                self.src_time = src_time;
                 // 音量初始化
                 self.sink.set_volume(1.0);
                 // 加载音频源, 并开始播放
@@ -380,19 +379,29 @@ impl Player {
             Forward => {
                 let jump_duration = Duration::from_secs(5);
                 let current_pos = self.sink.get_pos();
-                self.sink.try_seek(current_pos + jump_duration).unwrap();
+                let target_pos = current_pos + jump_duration;
+                if target_pos.as_secs() <= self.src_time {
+                    self.play()?;
+                    self.sink.try_seek(target_pos).unwrap();
+                } else {
+                    let target_pos = Duration::from_secs(self.src_time - 1);
+                    self.play()?;
+                    self.sink.try_seek(target_pos).unwrap();
+                }
             }
             Backward => {
                 let current_pos = self.sink.get_pos();
                 let jump_duration = Duration::from_secs(5);
                 let target_pos;
-                match current_pos.cmp(&jump_duration) {
+                match current_pos.as_secs().cmp(&jump_duration.as_secs()) {
                     std::cmp::Ordering::Equal | std::cmp::Ordering::Less => {
                         target_pos = Duration::from_secs(1);
+                        self.play()?;
                         let _ = self.sink.try_seek(target_pos);
                     }
                     std::cmp::Ordering::Greater => {
                         target_pos = current_pos - jump_duration;
+                        self.play()?;
                         let _ = self.sink.try_seek(target_pos);
                     }
                 }
