@@ -71,6 +71,7 @@ enum Operation {
 
 impl Player {
     /// 新建播放器Player实例
+    ///
     pub fn new() -> AnyResult<Self> {
         // 获取链接默认音频设备输出流和其句柄
         let _stream_handle = OutputStreamBuilder::open_default_stream()?;
@@ -205,10 +206,32 @@ impl Player {
         }
     }
 
+    /// 打印详细信息 + 进度条 + 歌词
+    ///
+    fn update_ui(&mut self) -> AnyResult<()> {
+        let current_pos = self.update_lrc().as_secs();
+        // 准备字符串
+        let information = self.update_info(current_pos);
+        let progress_line = self.update_progress_line(current_pos);
+        // 每次循环都回到最初保存的锚点
+        execute!(io::stdout(), cursor::RestorePosition)?;
+        // 清除该行
+        execute!(io::stdout(), Clear(ClearType::UntilNewLine),)?;
+        // 打印歌曲信息
+        print!("{}", information);
+        Player::move_and_clear_new_line()?;
+        // 打印进度条
+        print!("{}", progress_line);
+        Player::move_and_clear_new_line()?;
+        // 打印歌词
+        print!("🎤 {}", self.current_lrc.cyan().bold());
+        Player::move_and_clear_new_line()?;
+        io::stdout().flush()?;
+        Ok(())
+    }
+
     /// 清除屏幕内容
     ///
-    /// 根据操作系统类型调用相应的清屏命令
-    /// Windows系统使用"cls"命令，Unix系统使用"clear"命令
     pub fn clear_screen() {
         #[cfg(windows)]
         std::process::Command::new("cmd")
@@ -220,6 +243,7 @@ impl Player {
         std::process::Command::new("clear").status().ok();
     }
     /// 更新当前歌词并返回当前播放位置
+    ///
     fn update_lrc(&mut self) -> Duration {
         // 获取当前播放位置
         let current_pos = self.sink.get_pos();
@@ -235,19 +259,9 @@ impl Player {
         self.current_lrc = lrc_to_display;
         current_pos
     }
-    /// UI渲染核心方法
+    /// 更新进度条
     ///
-    /// # 功能说明
-    /// 1. 计算当前播放位置
-    /// 2. 更新歌词显示
-    /// 3. 渲染进度条和歌词界面
-    ///
-    /// # 界面布局
-    /// 采用双行锚定模式：
-    /// 1. 第一行：播放进度条
-    /// 2. 第二行：当前歌词
-    fn update_ui(&mut self) -> AnyResult<()> {
-        let current_pos = self.update_lrc().as_secs();
+    fn update_progress_line(&mut self, current_pos: u64) -> String {
         // 进度条打印字符长度
         let progress_total_len = 35;
         // 每个字符对应的时间范围
@@ -263,19 +277,6 @@ impl Player {
             }
             _ => 0,
         };
-        // 打印 详细信息 + 进度条 + 歌词
-        // 准备字符串
-        let minutes = current_pos / 60;
-        let seconds = current_pos % 60;
-        let now_time = format!("{:02}:{:02}", minutes, seconds);
-        let information = format!(
-            "📀 {}/{} 🎧{} ⏳{}/{}",
-            self.current_audio_idx.to_string().blue(),
-            self.audio_total.to_string().yellow(),
-            self.current_audio.blue(),
-            now_time.blue(),
-            self.total_time.green()
-        );
         // 进度条字符串
         let progress_line = match progress_total_len - current_progress {
             // 剩余进度字符长度
@@ -298,34 +299,34 @@ impl Player {
                 format!("<>{}<>", "#".repeat(current_progress as usize).blue())
             }
         };
+        progress_line
+    }
 
-        // 每次循环都回到最初保存的锚点
-        execute!(io::stdout(), cursor::RestorePosition)?;
-        //
-        execute!(
-            io::stdout(),
-            // 清除第一行内容
-            Clear(ClearType::UntilNewLine),
-        )?;
-        // 打印歌曲信息
-        print!("{}", information);
+    /// 更新歌曲信息
+    ///
+    fn update_info(&mut self, current_pos: u64) -> String {
+        let minutes = current_pos / 60;
+        let seconds = current_pos % 60;
+        let now_time = format!("{:02}:{:02}", minutes, seconds);
+        let information = format!(
+            "📀 {}/{} 🎧{} ⏳{}/{}",
+            self.current_audio_idx.to_string().blue(),
+            self.audio_total.to_string().yellow(),
+            self.current_audio.blue(),
+            now_time.blue(),
+            self.total_time.green()
+        );
+        information
+    }
+
+    /// 移动到下一行，并清除该行.
+    ///
+    fn move_and_clear_new_line() -> AnyResult<()> {
         execute!(
             io::stdout(),
             cursor::MoveToNextLine(1),
             Clear(ClearType::UntilNewLine)
         )?;
-        // 打印进度条
-        print!("{}", progress_line);
-        // 移动到下一行，并清除该行，然后打印歌词
-        // MoveToNextLine(1) 将光标移动到下一行的第0列
-        execute!(
-            io::stdout(),
-            cursor::MoveToNextLine(1),
-            Clear(ClearType::UntilNewLine)
-        )?;
-        // 打印歌词
-        print!("🎤 {}", self.current_lrc.cyan().bold());
-        io::stdout().flush()?;
         Ok(())
     }
 
@@ -431,7 +432,7 @@ impl Player {
     }
 
     /// 定位到当前音频的指定位置
-    /// 
+    ///
     fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
         self.play()?;
         let _ = self.sink.try_seek(target_pos);
