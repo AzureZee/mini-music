@@ -1,5 +1,8 @@
-use crate::{AnyResult, anyhow,view::*, utils::{load_and_parse_lrc, load_audio_list}};
-use colored::Colorize;
+use crate::{
+    AnyResult, anyhow,
+    utils::{load_and_parse_lrc, load_audio_list},
+    view::*,
+};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
@@ -11,19 +14,18 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{self, BufReader},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
 use walkdir::DirEntry as WalkDirEntry;
 
-
 /// CLI音乐播放器核心结构体
 pub struct Player {
-    /// 音频播放引擎，管理音频流的播放/暂停/停止
+    /// 音频输出设备的句柄，管理音频流的播放
     pub sink: rodio::Sink,
-    /// 音频输出流句柄，用于创建新的Sink实例
+    /// 音频输出流句柄
     _stream_handle: OutputStream,
     /// 音乐文件存储目录路径
     pub audio_dir: String,
@@ -41,8 +43,6 @@ pub struct Player {
     pub total_time: String,
     /// 解析后的歌词数据（时间戳 -> 歌词文本）
     pub lyrics: Option<Vec<(Duration, String)>>,
-    /// 当前应显示的歌词行
-    pub current_lrc: String,
     /// 退出标志
     should_exit: bool,
 }
@@ -86,7 +86,6 @@ impl Player {
             audio_total: 0,
             src_time: 0,
             lyrics: None,
-            current_lrc: String::new(),
             should_exit: false,
         })
     }
@@ -100,7 +99,7 @@ impl Player {
         // 计算总曲目数
         self.audio_total = self.audio_list.as_ref().unwrap().len() as u32;
         // 执行首次播放
-        self.play()?;
+        self.playback()?;
         Ok(())
     }
 
@@ -120,15 +119,10 @@ impl Player {
         while !shared_player.lock().unwrap().should_exit {
             {
                 let mut player = shared_player.lock().unwrap();
-                if player.sink.empty() {
+                if player.is_empty() {
                     // eprintln!("sink is empty");
-                    if player.current_audio_idx == player.audio_total {
-                        player.current_audio_idx = 1;
-                        player.play()?;
-                    } else {
-                        player.current_audio_idx += 1;
-                        player.play()?;
-                    }
+                    player.switch(true);
+                    player.playback()?;
                 }
             }
             thread::sleep(Duration::from_millis(200));
@@ -147,61 +141,105 @@ impl Player {
         Ok(())
     }
 
+    pub fn decoder(&self, audio: &Path) -> AnyResult<Decoder<BufReader<File>>> {
+        // 解码音频
+        let file = BufReader::new(File::open(audio)?);
+        let source = Decoder::new(file)?;
+        Ok(source)
+    }
+    pub fn get_duration(&self, source: &Decoder<BufReader<File>>) -> Duration {
+        let src_duration = source
+            .total_duration()
+            .unwrap_or_else(|| Duration::from_secs(0));
+        src_duration
+    }
+    pub fn get_entry(&self) -> AnyResult<PathBuf> {
+        if let Some(audio_map) = &self.audio_list
+            && let Some(audio) = audio_map.get(&self.current_audio_idx)
+        {
+            Ok(audio.path().to_path_buf())
+        } else {
+            Err(anyhow!("无效的音频索引"))
+        }
+    }
     /// 播放指定索引的音频
-    fn play(&mut self) -> AnyResult<()> {
-        //  切换前清空Sink
-        if !self.sink.is_paused() {
-            self.sink.clear();
-            self.sink.play();
-        } else {
-            self.sink.clear();
-        }
+    fn playback(&mut self) -> AnyResult<()> {
+        self.hold_state_clear();
         //
-        if let Some(audio_map) = &self.audio_list {
-            if let Some(audio) = audio_map.get(&self.current_audio_idx) {
-                //TODO: cut
-                // -- 在这里加载歌词 --
-                // 每次播放新歌曲时，先清空旧歌词
-                self.lyrics = None;
-                self.current_lrc = "".to_string();
-                // 尝试加载并解析歌词
-                self.lyrics = load_and_parse_lrc(audio.path());
-                // -- 歌词加载结束 --
-                //TODO: end
-                // 解码音频
-                let file = BufReader::new(File::open(audio.path())?);
-                let source = Decoder::new(file)?;
-                // 获取音频时长
-                let src_duration = source
-                    .total_duration()
-                    .unwrap_or_else(|| Duration::from_secs(0));
-                let src_time = src_duration.as_secs();
-                //TODO: cut
-                let src_minutes = src_time / 60;
-                let src_seconds = src_time % 60;
-                self.total_time = format!("{:02}:{:02}", src_minutes, src_seconds);
-                //TODO: end
-                self.src_time = src_time;
-                // 音量初始化
-                self.sink.set_volume(1.0);
-                // 加载音频源, 并开始播放
-                self.sink.append(source);
-                //TODO: cut
-                //获取不含扩展名的文件名
-                self.current_audio = audio
-                    .path()
-                    .file_stem()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string();
-                //TODO: end
-                Ok(())
-            } else {
-                Err(anyhow!("{}: 无效的音频索引", "Error".red()))
-            }
+        let audio = self.get_entry()?;
+        //TODO: cut
+        // -- 在这里加载歌词 --
+        // 每次播放新歌曲时，先清空旧歌词
+        self.lyrics = None;
+        // 尝试加载并解析歌词
+        self.lyrics = load_and_parse_lrc(&audio);
+        // -- 歌词加载结束 --
+        //TODO: end
+        // 解码音频
+        let source = self.decoder(&audio)?;
+        // 获取音频时长
+        let src_time = self.get_duration(&source).as_secs();
+        //TODO: cut
+        let src_minutes = src_time / 60;
+        let src_seconds = src_time % 60;
+        self.total_time = format!("{:02}:{:02}", src_minutes, src_seconds);
+        //TODO: end
+        self.src_time = src_time;
+        // 音量初始化
+        self.set_volume(1.0);
+        // 加载音频源, 并开始播放
+        self.append(source);
+        //TODO: cut
+        //获取不含扩展名的文件名
+        self.current_audio = audio.file_stem().unwrap().to_string_lossy().to_string();
+        //TODO: end
+        Ok(())
+    }
+
+    /// 定位到当前音频的指定位置
+    pub fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
+        self.playback()?;
+        let _ = self.sink.try_seek(target_pos);
+        Ok(())
+    }
+    pub fn is_paused(&self) -> bool {
+        self.sink.is_paused()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.sink.empty()
+    }
+    pub fn play(&self) {
+        self.sink.play();
+    }
+    pub fn pause(&self) {
+        self.sink.pause();
+    }
+    pub fn stop(&self) {
+        self.sink.stop();
+    }
+    pub fn get_pos(&self) -> Duration {
+        self.sink.get_pos()
+    }
+    pub fn set_volume(&self, value: f32) {
+        self.sink.set_volume(value);
+    }
+
+    pub fn append(&self, source: Decoder<BufReader<File>>) {
+        self.sink.append(source);
+    }
+
+    ///  确保清空Sink后不改变播放状态
+    pub fn hold_state_clear(&mut self) {
+        if !self.is_paused() {
+            self.clear();
+            self.play();
         } else {
-            Err(anyhow!("{}", "未加载音频列表".red()))
+            self.clear();
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.sink.clear();
     }
 
     /// 派生子线程, 刷新UI
@@ -250,66 +288,72 @@ impl Player {
         use Operation::*;
         match op {
             TogglePaused => {
-                if self.sink.is_paused() {
-                    self.sink.play();
+                if self.is_paused() {
+                    self.play();
                 } else {
-                    self.sink.pause();
+                    self.pause();
                 }
             }
             Next => {
-                if self.current_audio_idx == self.audio_total {
-                    self.current_audio_idx = 1
-                } else {
-                    self.current_audio_idx += 1;
-                }
-                self.play()?;
+                self.switch(true);
+                self.playback()?;
             }
             Prev => {
-                if self.current_audio_idx == 1 {
-                    self.current_audio_idx = self.audio_total;
-                } else {
-                    self.current_audio_idx -= 1;
-                }
-                self.play()?;
+                self.switch(false);
+                self.playback()?;
             }
             Exit => {
-                self.sink.stop();
+                self.stop();
                 self.should_exit = true;
             }
             Clean => {
                 clear_screen();
             }
             Forward => {
-                let current_pos = self.sink.get_pos();
-                let jump_duration = Duration::from_secs(5);
-                let target_pos = current_pos + jump_duration;
-                if target_pos.as_secs() <= self.src_time {
-                    self.seek(target_pos)?;
-                } else {
-                    let target_pos = Duration::from_secs(self.src_time - 1);
-                    self.seek(target_pos)?;
-                }
+                self.forward()?;
             }
             Backward => {
-                let current_pos = self.sink.get_pos();
-                let jump_duration = Duration::from_secs(5);
-                let target_pos;
-                if current_pos.as_secs() <= jump_duration.as_secs() {
-                    target_pos = Duration::from_secs(1);
-                    self.seek(target_pos)?;
-                } else {
-                    target_pos = current_pos - jump_duration;
-                    self.seek(target_pos)?;
-                }
+                self.backward()?;
             }
         }
         Ok(())
     }
 
-    /// 定位到当前音频的指定位置
-    fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
-        self.play()?;
-        let _ = self.sink.try_seek(target_pos);
+    pub fn switch(&mut self, is_next: bool) {
+        match is_next {
+            true => {
+                if !self.current_audio_idx == self.audio_total {
+                    self.current_audio_idx += 1;
+                } else {
+                    self.current_audio_idx = 1
+                }
+            }
+            false => {
+                if !self.current_audio_idx == 1 {
+                    self.current_audio_idx -= 1;
+                } else {
+                    self.current_audio_idx = self.audio_total;
+                }
+            }
+        }
+    }
+    pub fn forward(&mut self) -> AnyResult<()> {
+        let span = Duration::from_secs(5);
+        let target_pos = self.get_pos().saturating_add(span);
+        if (0..self.src_time).contains(&target_pos.as_secs()) {
+            self.seek(target_pos)?;
+        } else {
+            let target_pos = Duration::from_secs(self.src_time - 1);
+            self.seek(target_pos)?;
+        }
+        Ok(())
+    }
+    pub fn backward(&mut self) -> AnyResult<()> {
+        let span = Duration::from_secs(5);
+        let target_pos = self.get_pos().saturating_sub(span);
+        if (0..self.src_time).contains(&target_pos.as_secs()) {
+            self.seek(target_pos)?;
+        }
         Ok(())
     }
 }
