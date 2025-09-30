@@ -6,8 +6,7 @@
 //
 use crate::{AnyResult, player::Player};
 use std::{
-    io::{self, Write},
-    time::Duration,
+    collections::HashMap, io::{self, Write}, path::PathBuf
 };
 
 use colored::Colorize;
@@ -16,25 +15,31 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 
-/* #[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct CliUi {
+    /// 音乐文件存储目录路径
+    pub audio_dir: PathBuf,
     /// 当前播放曲目索引
     pub current_audio_idx: u32,
+    /// 音乐文件索引映射（索引 -> 文件元数据）
+    pub audio_list: Option<HashMap<u32, PathBuf>>,
     /// 总曲目数
     pub audio_total: u32,
     /// 当前播放文件名
-    file_name: String,
+    pub file_name: String,
+    /// 当前曲目总时长
+    pub src_time: u64,
     /// 当前曲目总时长的格式化字符串
-    total_time: u32,
+    pub total_time: u32,
     /// 解析后的歌词数据
-    lyrics: Option<Vec<(Duration, String)>>,
+    pub lyrics: Option<Vec<(u64, String)>>,
 }
 impl CliUi {
     pub fn new() -> Self {
-        Self::default()
+        Self{current_audio_idx: 1,..Default::default()}
     }
     /// 更新当前歌词
-    fn update_lrc(&self, current_pos: Duration) -> String {
+    pub fn update_lrc(&self, current_pos: u64) -> String {
         // 默认无歌词
         let mut lrc_to_display = "".to_string();
         // 查找当前应显示的歌词
@@ -46,14 +51,14 @@ impl CliUi {
         }
         lrc_to_display
     }
-} */
+}
 
 pub fn update_cli_ui() {}
 /// 打印详细信息 + 进度条 + 歌词
 pub fn update_ui(player: &Player) -> AnyResult<()> {
     // 获取当前播放位置
     let current_pos = player.get_pos();
-    let current_lrc = update_lrc(player, current_pos);
+    let current_lrc = update_lrc(player, current_pos.as_secs());
     // 准备字符串
     let information = update_info(player, current_pos.as_secs());
     let progress_line = update_progress_line(player, current_pos.as_secs());
@@ -86,7 +91,7 @@ pub fn clear_screen() {
     std::process::Command::new("clear").status().ok();
 }
 /// 更新当前歌词
-fn update_lrc(player: &Player, current_pos: Duration) -> String {
+fn update_lrc(player: &Player, current_pos: u64) -> String {
     // 默认无歌词
     let mut lrc_to_display = "".to_string();
     // 查找当前应显示的歌词

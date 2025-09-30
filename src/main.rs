@@ -16,7 +16,7 @@ fn main() -> AnyResult<()> {
             return Err(io::Error::new(ErrorKind::NotFound, "目录未找到!").into());
         }
 
-        player.initial(dir)?;
+        player.initial(&dir)?;
         
         Player::run(player)?;
     }

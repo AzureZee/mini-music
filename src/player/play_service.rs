@@ -19,18 +19,17 @@ use std::{
     thread,
     time::Duration,
 };
-use walkdir::DirEntry as WalkDirEntry;
 
 /// CLI音乐播放器核心结构体
 pub struct Player {
     /// 音频输出设备的句柄，管理音频流的播放
-    pub sink: rodio::Sink,
+    sink: rodio::Sink,
     /// 音频输出流句柄
     _stream_handle: OutputStream,
     /// 音乐文件存储目录路径
-    pub audio_dir: String,
+    pub audio_dir: PathBuf,
     /// 音乐文件索引映射（索引 -> 文件元数据）
-    pub audio_list: Option<HashMap<u32, WalkDirEntry>>,
+    pub audio_list: Option<HashMap<u32, PathBuf>>,
     /// 当前播放曲目索引
     pub current_audio_idx: u32,
     /// 当前播放文件名（缓存显示用）
@@ -42,7 +41,7 @@ pub struct Player {
     /// 当前曲目总时长的格式化字符串
     pub total_time: String,
     /// 解析后的歌词数据（时间戳 -> 歌词文本）
-    pub lyrics: Option<Vec<(Duration, String)>>,
+    pub lyrics: Option<Vec<(u64, String)>>,
     /// 退出标志
     should_exit: bool,
 }
@@ -78,7 +77,7 @@ impl Player {
         Ok(Self {
             sink,
             _stream_handle,
-            audio_dir: String::new(),
+            audio_dir: PathBuf::new(),
             total_time: String::new(),
             current_audio: String::new(),
             audio_list: None,
@@ -91,9 +90,9 @@ impl Player {
     }
 
     /// 初始化播放器
-    pub fn initial(&mut self, dir: PathBuf) -> AnyResult<()> {
+    pub fn initial(&mut self, dir: &Path) -> AnyResult<()> {
         // 缓存目录
-        self.audio_dir = dir.to_string_lossy().into_owned().to_string();
+        self.audio_dir = dir.to_path_buf();
         // 加载音频列表
         self.audio_list = load_audio_list(&self.audio_dir);
         // 计算总曲目数
@@ -147,17 +146,17 @@ impl Player {
         let source = Decoder::new(file)?;
         Ok(source)
     }
-    pub fn get_duration(&self, source: &Decoder<BufReader<File>>) -> Duration {
+    pub fn get_duration(&self, source: &Decoder<BufReader<File>>) -> u64 {
         let src_duration = source
             .total_duration()
             .unwrap_or_else(|| Duration::from_secs(0));
-        src_duration
+        src_duration.as_secs()
     }
     pub fn get_entry(&self) -> AnyResult<PathBuf> {
         if let Some(audio_map) = &self.audio_list
             && let Some(audio) = audio_map.get(&self.current_audio_idx)
         {
-            Ok(audio.path().to_path_buf())
+            Ok(audio.into())
         } else {
             Err(anyhow!("无效的音频索引"))
         }
@@ -168,17 +167,13 @@ impl Player {
         //
         let audio = self.get_entry()?;
         //TODO: cut
-        // -- 在这里加载歌词 --
-        // 每次播放新歌曲时，先清空旧歌词
-        self.lyrics = None;
         // 尝试加载并解析歌词
         self.lyrics = load_and_parse_lrc(&audio);
-        // -- 歌词加载结束 --
         //TODO: end
         // 解码音频
         let source = self.decoder(&audio)?;
         // 获取音频时长
-        let src_time = self.get_duration(&source).as_secs();
+        let src_time = self.get_duration(&source);
         //TODO: cut
         let src_minutes = src_time / 60;
         let src_seconds = src_time % 60;
@@ -322,17 +317,17 @@ impl Player {
     pub fn switch(&mut self, is_next: bool) {
         match is_next {
             true => {
-                if !self.current_audio_idx == self.audio_total {
-                    self.current_audio_idx += 1;
-                } else {
+                if self.current_audio_idx == self.audio_total {
                     self.current_audio_idx = 1
+                } else {
+                    self.current_audio_idx += 1;
                 }
             }
             false => {
-                if !self.current_audio_idx == 1 {
-                    self.current_audio_idx -= 1;
-                } else {
+                if self.current_audio_idx == 1 {
                     self.current_audio_idx = self.audio_total;
+                } else {
+                    self.current_audio_idx -= 1;
                 }
             }
         }
