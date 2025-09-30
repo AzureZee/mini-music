@@ -1,4 +1,4 @@
-use crate::{AnyResult, anyhow, player::tool::load_and_parse_lrc};
+use crate::{AnyResult, anyhow, utils::{load_and_parse_lrc, load_audio_list},view::update_cli_ui};
 use colored::Colorize;
 use crossterm::{
     cursor,
@@ -16,7 +16,7 @@ use std::{
     thread,
     time::Duration,
 };
-use walkdir::{DirEntry as WalkDirEntry, WalkDir};
+use walkdir::DirEntry as WalkDirEntry;
 
 /// CLI音乐播放器核心结构体
 pub struct Player {
@@ -80,7 +80,7 @@ impl Player {
             audio_dir: String::new(),
             total_time: String::new(),
             current_audio: String::new(),
-            audio_list: Some(HashMap::new()),
+            audio_list: None,
             current_audio_idx: 1,
             audio_total: 0,
             src_time: 0,
@@ -95,10 +95,9 @@ impl Player {
         // 缓存目录
         self.audio_dir = dir.to_string_lossy().into_owned().to_string();
         // 加载音频列表
-        self.load_audio()?;
+        self.audio_list = load_audio_list(&self.audio_dir);
         // 计算总曲目数
-        let total = self.audio_list.as_ref().unwrap().len();
-        self.audio_total = total as u32;
+        self.audio_total = self.audio_list.as_ref().unwrap().len() as u32;
         // 执行首次播放
         self.play()?;
         Ok(())
@@ -140,7 +139,7 @@ impl Player {
         execute!(
             io::stdout(),
             cursor::RestorePosition, // 回到锚点
-            cursor::Show // 最后显示光标
+            cursor::Show             // 最后显示光标
         )?;
         disable_raw_mode()?;
 
@@ -159,6 +158,7 @@ impl Player {
         //
         if let Some(audio_map) = &self.audio_list {
             if let Some(audio) = audio_map.get(&self.current_audio_idx) {
+                //TODO: cut
                 // -- 在这里加载歌词 --
                 // 每次播放新歌曲时，先清空旧歌词
                 self.lyrics = None;
@@ -166,6 +166,7 @@ impl Player {
                 // 尝试加载并解析歌词
                 self.lyrics = load_and_parse_lrc(audio.path());
                 // -- 歌词加载结束 --
+                //TODO: end
                 // 解码音频
                 let file = BufReader::new(File::open(audio.path())?);
                 let source = Decoder::new(file)?;
@@ -174,14 +175,17 @@ impl Player {
                     .total_duration()
                     .unwrap_or_else(|| Duration::from_secs(0));
                 let src_time = src_duration.as_secs();
+                //TODO: cut
                 let src_minutes = src_time / 60;
                 let src_seconds = src_time % 60;
                 self.total_time = format!("{:02}:{:02}", src_minutes, src_seconds);
+                //TODO: end
                 self.src_time = src_time;
                 // 音量初始化
                 self.sink.set_volume(1.0);
                 // 加载音频源, 并开始播放
                 self.sink.append(source);
+                //TODO: cut
                 //获取不含扩展名的文件名
                 self.current_audio = audio
                     .path()
@@ -189,7 +193,7 @@ impl Player {
                     .unwrap()
                     .to_string_lossy()
                     .to_string();
-
+                //TODO: end
                 Ok(())
             } else {
                 Err(anyhow!("{}: 无效的音频索引", "Error".red()))
@@ -199,12 +203,15 @@ impl Player {
         }
     }
 
+    //TODO: cut
     /// 打印详细信息 + 进度条 + 歌词
     fn update_ui(&mut self) -> AnyResult<()> {
-        let current_pos = self.update_lrc().as_secs();
+        // 获取当前播放位置
+        let current_pos = self.sink.get_pos();
+        self.update_lrc(current_pos);
         // 准备字符串
-        let information = self.update_info(current_pos);
-        let progress_line = self.update_progress_line(current_pos);
+        let information = self.update_info(current_pos.as_secs());
+        let progress_line = self.update_progress_line(current_pos.as_secs());
         // 每次循环都回到最初保存的锚点
         execute!(io::stdout(), cursor::RestorePosition)?;
         // 清除该行
@@ -233,10 +240,8 @@ impl Player {
         #[cfg(unix)]
         std::process::Command::new("clear").status().ok();
     }
-    /// 更新当前歌词并返回当前播放位置
-    fn update_lrc(&mut self) -> Duration {
-        // 获取当前播放位置
-        let current_pos = self.sink.get_pos();
+    /// 更新当前歌词
+    fn update_lrc(&mut self, current_pos: Duration) {
         // 默认无歌词
         let mut lrc_to_display = "".to_string();
         // 查找当前应显示的歌词
@@ -247,7 +252,6 @@ impl Player {
             }
         }
         self.current_lrc = lrc_to_display;
-        current_pos
     }
     /// 更新进度条
     fn update_progress_line(&mut self, current_pos: u64) -> String {
@@ -266,7 +270,7 @@ impl Player {
             }
             _ => 0,
         };
-        // 进度条字符串        
+        // 进度条字符串
         match progress_total_len - current_progress {
             // 剩余进度字符长度
             remaining_progress if remaining_progress >= 1 => {
@@ -291,7 +295,7 @@ impl Player {
     }
 
     /// 更新歌曲信息
-    fn update_info(&mut self, current_pos: u64) -> String {
+    fn update_info(&self, current_pos: u64) -> String {
         let minutes = current_pos / 60;
         let seconds = current_pos % 60;
         let now_time = format!("{:02}:{:02}", minutes, seconds);
@@ -315,12 +319,14 @@ impl Player {
         )?;
         Ok(())
     }
-
+    //TODO: end
     /// 派生子线程, 刷新UI
     fn ui_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
         thread::spawn(move || -> AnyResult<()> {
             while !shared_player.lock().unwrap().should_exit {
                 shared_player.lock().unwrap().update_ui()?;
+                //TODO: 完善此函数
+                update_cli_ui();
                 thread::sleep(Duration::from_millis(100));
             }
             Ok(())
@@ -334,21 +340,22 @@ impl Player {
             while !shared_player.lock().unwrap().should_exit {
                 if event::poll(Duration::from_millis(100))?
                     && let Event::Key(key) = event::read()?
-                        && key.kind == KeyEventKind::Press {
-                            let op = match key.code {
-                                KeyCode::Char(' ') => Some(TogglePaused),
-                                KeyCode::Char('c') => Some(Clean),
-                                KeyCode::Left => Some(Backward),
-                                KeyCode::Right => Some(Forward),
-                                KeyCode::Up => Some(Prev),
-                                KeyCode::Down => Some(Next),
-                                KeyCode::Esc => Some(Exit),
-                                _ => None,
-                            };
-                            if let Some(op) = op {
-                                shared_player.lock().unwrap().key_action(op)?;
-                            }
-                        }
+                    && key.kind == KeyEventKind::Press
+                {
+                    let op = match key.code {
+                        KeyCode::Char(' ') => Some(TogglePaused),
+                        KeyCode::Char('c') => Some(Clean),
+                        KeyCode::Left => Some(Backward),
+                        KeyCode::Right => Some(Forward),
+                        KeyCode::Up => Some(Prev),
+                        KeyCode::Down => Some(Next),
+                        KeyCode::Esc => Some(Exit),
+                        _ => None,
+                    };
+                    if let Some(op) = op {
+                        shared_player.lock().unwrap().key_action(op)?;
+                    }
+                }
             }
             Ok(())
         })
@@ -419,28 +426,6 @@ impl Player {
     fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
         self.play()?;
         let _ = self.sink.try_seek(target_pos);
-        Ok(())
-    }
-    /// 使用扩展名过滤文件, 使用`WalkDir`递归遍历目录, 加载音频列表
-    fn load_audio(&mut self) -> AnyResult<()> {
-        let ext_list = ["mp3", "m4a", "flac", "aac", "wav", "ogg", "ape"];
-        //
-        let mut index = 1;
-        let dir = &self.audio_dir;
-
-        if let Some(audio_map) = &mut self.audio_list {
-            // 使用 WalkDir 递归遍历目录
-            for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_file()
-                    && let Some(ext) = path.extension()
-                        && ext_list.contains(&ext.to_str().unwrap()) {
-                            audio_map.insert(index, entry);
-                            index += 1;
-                        }
-            }
-        }
-
         Ok(())
     }
 }
