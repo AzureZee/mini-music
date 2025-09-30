@@ -1,16 +1,16 @@
-use crate::{AnyResult, anyhow, utils::{load_and_parse_lrc, load_audio_list},view::update_cli_ui};
+use crate::{AnyResult, anyhow,view::*, utils::{load_and_parse_lrc, load_audio_list}};
 use colored::Colorize;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
-    terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, BufReader, Write},
+    io::{self, BufReader},
     path::PathBuf,
     sync::{Arc, Mutex},
     thread,
@@ -18,30 +18,31 @@ use std::{
 };
 use walkdir::DirEntry as WalkDirEntry;
 
+
 /// CLI音乐播放器核心结构体
 pub struct Player {
     /// 音频播放引擎，管理音频流的播放/暂停/停止
-    sink: rodio::Sink,
+    pub sink: rodio::Sink,
     /// 音频输出流句柄，用于创建新的Sink实例
     _stream_handle: OutputStream,
     /// 音乐文件存储目录路径
-    audio_dir: String,
+    pub audio_dir: String,
     /// 音乐文件索引映射（索引 -> 文件元数据）
-    audio_list: Option<HashMap<u32, WalkDirEntry>>,
+    pub audio_list: Option<HashMap<u32, WalkDirEntry>>,
     /// 当前播放曲目索引
-    current_audio_idx: u32,
+    pub current_audio_idx: u32,
     /// 当前播放文件名（缓存显示用）
-    current_audio: String,
+    pub current_audio: String,
     /// 总曲目数
-    audio_total: u32,
+    pub audio_total: u32,
     /// 当前曲目总时长
-    src_time: u64,
+    pub src_time: u64,
     /// 当前曲目总时长的格式化字符串
-    total_time: String,
+    pub total_time: String,
     /// 解析后的歌词数据（时间戳 -> 歌词文本）
-    lyrics: Option<Vec<(Duration, String)>>,
+    pub lyrics: Option<Vec<(Duration, String)>>,
     /// 当前应显示的歌词行
-    current_lrc: String,
+    pub current_lrc: String,
     /// 退出标志
     should_exit: bool,
 }
@@ -203,130 +204,13 @@ impl Player {
         }
     }
 
-    //TODO: cut
-    /// 打印详细信息 + 进度条 + 歌词
-    fn update_ui(&mut self) -> AnyResult<()> {
-        // 获取当前播放位置
-        let current_pos = self.sink.get_pos();
-        self.update_lrc(current_pos);
-        // 准备字符串
-        let information = self.update_info(current_pos.as_secs());
-        let progress_line = self.update_progress_line(current_pos.as_secs());
-        // 每次循环都回到最初保存的锚点
-        execute!(io::stdout(), cursor::RestorePosition)?;
-        // 清除该行
-        execute!(io::stdout(), Clear(ClearType::UntilNewLine),)?;
-        // 打印歌曲信息
-        print!("{}", information);
-        Player::move_and_clear_new_line()?;
-        // 打印进度条
-        print!("{}", progress_line);
-        Player::move_and_clear_new_line()?;
-        // 打印歌词
-        print!("🎤 {}", self.current_lrc.cyan().bold());
-        Player::move_and_clear_new_line()?;
-        io::stdout().flush()?;
-        Ok(())
-    }
-
-    /// 清除屏幕内容
-    pub fn clear_screen() {
-        #[cfg(windows)]
-        std::process::Command::new("cmd")
-            .args(["/C", "cls"])
-            .status()
-            .ok();
-
-        #[cfg(unix)]
-        std::process::Command::new("clear").status().ok();
-    }
-    /// 更新当前歌词
-    fn update_lrc(&mut self, current_pos: Duration) {
-        // 默认无歌词
-        let mut lrc_to_display = "".to_string();
-        // 查找当前应显示的歌词
-        if let Some(lyrics) = &self.lyrics {
-            // 查找最后一个时间点小于等于当前播放时间的歌词, `rfind` 从后往前找，效率更高
-            if let Some((_time, text)) = lyrics.iter().rfind(|(time, _)| *time <= current_pos) {
-                lrc_to_display = text.clone();
-            }
-        }
-        self.current_lrc = lrc_to_display;
-    }
-    /// 更新进度条
-    fn update_progress_line(&mut self, current_pos: u64) -> String {
-        // 进度条打印字符长度
-        let progress_total_len = 35;
-        // 每个字符对应的时间范围
-        let seconds_per_char = self.src_time / progress_total_len;
-        // 当前进度字符长度
-        let current_progress = match current_pos / seconds_per_char {
-            result if result >= 1 => {
-                if result <= progress_total_len {
-                    result
-                } else {
-                    progress_total_len
-                }
-            }
-            _ => 0,
-        };
-        // 进度条字符串
-        match progress_total_len - current_progress {
-            // 剩余进度字符长度
-            remaining_progress if remaining_progress >= 1 => {
-                if current_progress >= 1 {
-                    format!(
-                        "<>{}{}<>",
-                        "#".repeat(current_progress as usize).blue(),
-                        "-".repeat(remaining_progress as usize)
-                    )
-                } else {
-                    format!(
-                        "{}{}<>",
-                        "<>".blue(),
-                        "-".repeat(remaining_progress as usize)
-                    )
-                }
-            }
-            _ => {
-                format!("<>{}<>", "#".repeat(current_progress as usize).blue())
-            }
-        }
-    }
-
-    /// 更新歌曲信息
-    fn update_info(&self, current_pos: u64) -> String {
-        let minutes = current_pos / 60;
-        let seconds = current_pos % 60;
-        let now_time = format!("{:02}:{:02}", minutes, seconds);
-        let information = format!(
-            "📀 {}/{} 🎧{} ⏳{}/{}",
-            self.current_audio_idx.to_string().blue(),
-            self.audio_total.to_string().yellow(),
-            self.current_audio.blue(),
-            now_time.blue(),
-            self.total_time.green()
-        );
-        information
-    }
-
-    /// 移动到下一行，并清除该行.
-    fn move_and_clear_new_line() -> AnyResult<()> {
-        execute!(
-            io::stdout(),
-            cursor::MoveToNextLine(1),
-            Clear(ClearType::UntilNewLine)
-        )?;
-        Ok(())
-    }
-    //TODO: end
     /// 派生子线程, 刷新UI
     fn ui_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
         thread::spawn(move || -> AnyResult<()> {
             while !shared_player.lock().unwrap().should_exit {
-                shared_player.lock().unwrap().update_ui()?;
+                // shared_player.lock().unwrap().update_ui()?;
                 //TODO: 完善此函数
-                update_cli_ui();
+                update_ui(&shared_player.lock().unwrap())?;
                 thread::sleep(Duration::from_millis(100));
             }
             Ok(())
@@ -393,7 +277,7 @@ impl Player {
                 self.should_exit = true;
             }
             Clean => {
-                Player::clear_screen();
+                clear_screen();
             }
             Forward => {
                 let current_pos = self.sink.get_pos();

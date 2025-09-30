@@ -2,10 +2,10 @@ use std::{
     fs,
     io::{self, ErrorKind},
 };
-use mini_music::{player::Player, AnyResult, Args};
+use mini_music::{player::Player, AnyResult, Args,view::clear_screen};
 
 fn main() -> AnyResult<()> {
-    Player::clear_screen();
+    clear_screen();
     // 解析cmdline参数
     let mut args = Args::default();
     args.get_dir();
@@ -20,6 +20,6 @@ fn main() -> AnyResult<()> {
         
         Player::run(player)?;
     }
-    Player::clear_screen();
+    clear_screen();
     Ok(())
 }
