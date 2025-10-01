@@ -2,14 +2,14 @@ use crate::{AnyResult, anyhow};
 use regex::Regex;
 use std::{
     fs::{self, File},
-    path::Path,
+    path::Path, time::Duration,
 };
 use symphonia::core::{
     formats::FormatOptions, io::MediaSourceStream, meta::StandardTagKey, probe::Hint,
 };
 
 ///  加载并解析一个音频文件的歌词
-pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(u64, String)>> {
+pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
     match get_lyrics(path) {
         Ok(lrc_string) => {
             let parsed = parse_lrc(&lrc_string);
@@ -76,7 +76,7 @@ fn get_local_lrc(path: &Path) -> AnyResult<String> {
 }
 /// 解析LRC歌词文本
 
-fn parse_lrc(lrc_text: &str) -> Vec<(u64, String)> {
+fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
     // 这个正则表达式只用于匹配和捕获一个时间戳, 不包含后面的文本部分
     let timestamp_rex = Regex::new(r"\[(\d{2}):(\d{2})[.:](\d{2,3})\]").unwrap();
     let mut lyrics = Vec::new();
@@ -84,7 +84,7 @@ fn parse_lrc(lrc_text: &str) -> Vec<(u64, String)> {
     for line in lrc_text.lines() {
         // 1. 找出当前行所有的歌词时间戳
         // 使用 captures_iter 来迭代所有匹配项
-        let timestamps: Vec<u64> = timestamp_rex
+        let timestamps: Vec<Duration> = timestamp_rex
             .captures_iter(line)
             .filter_map(|caps| {
                 // 解析分钟、秒和毫秒
@@ -99,7 +99,10 @@ fn parse_lrc(lrc_text: &str) -> Vec<(u64, String)> {
                     millis_str.parse().unwrap_or(0)
                 };
                 Some(
-                    minutes * 60 * 1000 + seconds * 1000 + millis,
+                    Duration::from_millis(
+                        
+                        minutes * 60 * 1000 + seconds * 1000 + millis
+                    )
                 )
             })
             .collect();

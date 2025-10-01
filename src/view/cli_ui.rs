@@ -6,7 +6,7 @@
 //
 use crate::{AnyResult, player::Player};
 use std::{
-    collections::HashMap, io::{self, Write}, path::PathBuf
+    collections::HashMap, io::{self, Write}, path::PathBuf, time::Duration
 };
 
 use colored::Colorize;
@@ -58,7 +58,7 @@ pub fn update_cli_ui() {}
 pub fn update_ui(player: &Player) -> AnyResult<()> {
     // 获取当前播放位置
     let current_pos = player.get_pos();
-    let current_lrc = update_lrc(player, current_pos.as_secs());
+    let current_lrc = update_lrc(player, current_pos);
     // 准备字符串
     let information = update_info(player, current_pos.as_secs());
     let progress_line = update_progress_line(player, current_pos.as_secs());
@@ -91,7 +91,7 @@ pub fn clear_screen() {
     std::process::Command::new("clear").status().ok();
 }
 /// 更新当前歌词
-fn update_lrc(player: &Player, current_pos: u64) -> String {
+fn update_lrc(player: &Player, current_pos: Duration) -> String {
     // 默认无歌词
     let mut lrc_to_display = "".to_string();
     // 查找当前应显示的歌词

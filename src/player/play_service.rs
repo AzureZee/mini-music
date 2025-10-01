@@ -41,7 +41,7 @@ pub struct Player {
     /// 当前曲目总时长的格式化字符串
     pub total_time: String,
     /// 解析后的歌词数据（时间戳 -> 歌词文本）
-    pub lyrics: Option<Vec<(u64, String)>>,
+    pub lyrics: Option<Vec<(Duration, String)>>,
     /// 退出标志
     should_exit: bool,
 }
