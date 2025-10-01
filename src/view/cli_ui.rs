@@ -1,12 +1,7 @@
-//TODO:
-//file_name
-//total_time
-//lyrics
-//current_lrc
-//
 use crate::{AnyResult, player::Player};
 use std::{
-    collections::HashMap, io::{self, Write}, path::PathBuf, time::Duration
+    io::{self, Write},
+    time::Duration,
 };
 
 use colored::Colorize;
@@ -15,45 +10,32 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 
-#[derive(Debug, Default)]
-pub struct CliUi {
-    /// 音乐文件存储目录路径
-    pub audio_dir: PathBuf,
-    /// 当前播放曲目索引
-    pub current_audio_idx: u32,
-    /// 音乐文件索引映射（索引 -> 文件元数据）
-    pub audio_list: Option<HashMap<u32, PathBuf>>,
-    /// 总曲目数
-    pub audio_total: u32,
-    /// 当前播放文件名
-    pub file_name: String,
-    /// 当前曲目总时长
-    pub src_time: u64,
-    /// 当前曲目总时长的格式化字符串
-    pub total_time: u32,
-    /// 解析后的歌词数据
-    pub lyrics: Option<Vec<(u64, String)>>,
-}
-impl CliUi {
-    pub fn new() -> Self {
-        Self{current_audio_idx: 1,..Default::default()}
-    }
-    /// 更新当前歌词
-    pub fn update_lrc(&self, current_pos: u64) -> String {
-        // 默认无歌词
-        let mut lrc_to_display = "".to_string();
-        // 查找当前应显示的歌词
-        if let Some(lyrics) = &self.lyrics {
-            // 查找最后一个时间点小于等于当前播放时间的歌词, `rfind` 从后往前找，效率更高
-            if let Some((_time, text)) = lyrics.iter().rfind(|(time, _)| *time <= current_pos) {
-                lrc_to_display = text.clone();
-            }
-        }
-        lrc_to_display
-    }
-}
+// #[derive(Debug, Default)]
+// pub struct CliUi {
+//     /// 音乐文件存储目录路径
+//     pub audio_dir: PathBuf,
+//     /// 当前播放曲目索引
+//     pub current_audio_idx: u32,
+//     /// 音乐文件索引映射（索引 -> 文件元数据）
+//     pub audio_list: Option<HashMap<u32, PathBuf>>,
+//     /// 总曲目数
+//     pub audio_total: u32,
+//     /// 当前播放文件名
+//     pub file_name: String,
+//     /// 当前曲目总时长
+//     pub src_time: u64,
+//     /// 当前曲目总时长的格式化字符串
+//     pub total_time: u32,
+//     /// 解析后的歌词数据
+//     pub lyrics: Option<Vec<(u64, String)>>,
+// }
+// impl CliUi {
+//     pub fn new() -> Self {
+//         Self{current_audio_idx: 1,..Default::default()}
+//     }
 
-pub fn update_cli_ui() {}
+// }
+
 /// 打印详细信息 + 进度条 + 歌词
 pub fn update_ui(player: &Player) -> AnyResult<()> {
     // 获取当前播放位置
@@ -149,15 +131,14 @@ fn update_info(player: &Player, current_pos: u64) -> String {
     let minutes = current_pos / 60;
     let seconds = current_pos % 60;
     let now_time = format!("{:02}:{:02}", minutes, seconds);
-    let information = format!(
+    format!(
         "📀 {}/{} 🎧{} ⏳{}/{}",
         player.current_audio_idx.to_string().blue(),
         player.audio_total.to_string().yellow(),
-        player.current_audio.blue(),
+        player.file_name.blue(),
         now_time.blue(),
         player.total_time.green()
-    );
-    information
+    )
 }
 
 /// 移动到下一行，并清除该行.

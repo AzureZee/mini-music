@@ -1,7 +1,5 @@
 use crate::{
-    AnyResult, anyhow,
-    utils::{load_and_parse_lrc, load_audio_list},
-    view::*,
+    anyhow, utils::*, view::*, AnyResult
 };
 use crossterm::{
     cursor,
@@ -26,14 +24,12 @@ pub struct Player {
     sink: rodio::Sink,
     /// 音频输出流句柄
     _stream_handle: OutputStream,
-    /// 音乐文件存储目录路径
-    pub audio_dir: PathBuf,
     /// 音乐文件索引映射（索引 -> 文件元数据）
     pub audio_list: Option<HashMap<u32, PathBuf>>,
     /// 当前播放曲目索引
     pub current_audio_idx: u32,
     /// 当前播放文件名（缓存显示用）
-    pub current_audio: String,
+    pub file_name: String,
     /// 总曲目数
     pub audio_total: u32,
     /// 当前曲目总时长
@@ -47,25 +43,6 @@ pub struct Player {
 }
 type SharedPlayer = Arc<Mutex<Player>>;
 
-/// 键盘操作映射
-///
-/// 每个枚举值对应特定的播放控制功能
-enum Operation {
-    /// 切换播放/暂停状态
-    TogglePaused,
-    /// 切换到上一首
-    Prev,
-    /// 切换到下一首
-    Next,
-    /// 快进
-    Forward,
-    /// 后退
-    Backward,
-    /// 退出播放器
-    Exit,
-    /// 手动清屏
-    Clean,
-}
 
 impl Player {
     /// 新建播放器Player实例
@@ -77,9 +54,8 @@ impl Player {
         Ok(Self {
             sink,
             _stream_handle,
-            audio_dir: PathBuf::new(),
             total_time: String::new(),
-            current_audio: String::new(),
+            file_name: String::new(),
             audio_list: None,
             current_audio_idx: 1,
             audio_total: 0,
@@ -91,10 +67,8 @@ impl Player {
 
     /// 初始化播放器
     pub fn initial(&mut self, dir: &Path) -> AnyResult<()> {
-        // 缓存目录
-        self.audio_dir = dir.to_path_buf();
         // 加载音频列表
-        self.audio_list = load_audio_list(&self.audio_dir);
+        self.audio_list = load_audio_list(dir);
         // 计算总曲目数
         self.audio_total = self.audio_list.as_ref().unwrap().len() as u32;
         // 执行首次播放
@@ -115,12 +89,11 @@ impl Player {
         let ui_handle = Player::ui_thread(Arc::clone(&shared_player));
         let key_handle = Player::monitor_key_thread(Arc::clone(&shared_player));
         // 主线程执行循环播放
-        while !shared_player.lock().unwrap().should_exit {
+        while !shared_player.lock().unwrap().is_exit() {
             {
                 let mut player = shared_player.lock().unwrap();
                 if player.is_empty() {
-                    // eprintln!("sink is empty");
-                    player.switch(true);
+                    switch(&mut player,true);
                     player.playback()?;
                 }
             }
@@ -152,7 +125,7 @@ impl Player {
             .unwrap_or_else(|| Duration::from_secs(0));
         src_duration.as_secs()
     }
-    pub fn get_entry(&self) -> AnyResult<PathBuf> {
+    pub fn get_audio_path(&self) -> AnyResult<PathBuf> {
         if let Some(audio_map) = &self.audio_list
             && let Some(audio) = audio_map.get(&self.current_audio_idx)
         {
@@ -161,33 +134,28 @@ impl Player {
             Err(anyhow!("无效的音频索引"))
         }
     }
+    
     /// 播放指定索引的音频
-    fn playback(&mut self) -> AnyResult<()> {
+    pub fn playback(&mut self) -> AnyResult<()> {
         self.hold_state_clear();
         //
-        let audio = self.get_entry()?;
-        //TODO: cut
+        let audio = self.get_audio_path()?;
         // 尝试加载并解析歌词
         self.lyrics = load_and_parse_lrc(&audio);
-        //TODO: end
         // 解码音频
         let source = self.decoder(&audio)?;
         // 获取音频时长
         let src_time = self.get_duration(&source);
-        //TODO: cut
-        let src_minutes = src_time / 60;
-        let src_seconds = src_time % 60;
-        self.total_time = format!("{:02}:{:02}", src_minutes, src_seconds);
-        //TODO: end
+        let minutes = src_time / 60;
+        let seconds = src_time % 60;
+        self.total_time = format!("{:02}:{:02}", minutes, seconds);
         self.src_time = src_time;
         // 音量初始化
         self.set_volume(1.0);
         // 加载音频源, 并开始播放
         self.append(source);
-        //TODO: cut
         //获取不含扩展名的文件名
-        self.current_audio = audio.file_stem().unwrap().to_string_lossy().to_string();
-        //TODO: end
+        self.file_name = audio.file_stem().unwrap().to_string_lossy().to_string();
         Ok(())
     }
 
@@ -236,14 +204,19 @@ impl Player {
     pub fn clear(&mut self) {
         self.sink.clear();
     }
-
+    pub fn is_exit(&self) -> bool {
+        self.should_exit
+    }
+    pub fn exit(&mut self) {
+        self.should_exit = true;
+    }
     /// 派生子线程, 刷新UI
     fn ui_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
         thread::spawn(move || -> AnyResult<()> {
-            while !shared_player.lock().unwrap().should_exit {
-                // shared_player.lock().unwrap().update_ui()?;
-                //TODO: 完善此函数
-                update_ui(&shared_player.lock().unwrap())?;
+            while !shared_player.lock().unwrap().is_exit() {
+                {
+                    update_ui(&shared_player.lock().unwrap())?;
+                }
                 thread::sleep(Duration::from_millis(100));
             }
             Ok(())
@@ -254,7 +227,7 @@ impl Player {
     fn monitor_key_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
         use Operation::*;
         thread::spawn(move || -> AnyResult<()> {
-            while !shared_player.lock().unwrap().should_exit {
+            while !shared_player.lock().unwrap().is_exit() {
                 if event::poll(Duration::from_millis(100))?
                     && let Event::Key(key) = event::read()?
                     && key.kind == KeyEventKind::Press
@@ -270,7 +243,8 @@ impl Player {
                         _ => None,
                     };
                     if let Some(op) = op {
-                        shared_player.lock().unwrap().key_action(op)?;
+                        let mut player = shared_player.lock().unwrap();
+                        key_action(&mut player,op)?;
                     }
                 }
             }
@@ -278,77 +252,9 @@ impl Player {
         })
     }
 
-    /// 执行`Operation`变体对应的具体操作
-    fn key_action(&mut self, op: Operation) -> AnyResult<()> {
-        use Operation::*;
-        match op {
-            TogglePaused => {
-                if self.is_paused() {
-                    self.play();
-                } else {
-                    self.pause();
-                }
-            }
-            Next => {
-                self.switch(true);
-                self.playback()?;
-            }
-            Prev => {
-                self.switch(false);
-                self.playback()?;
-            }
-            Exit => {
-                self.stop();
-                self.should_exit = true;
-            }
-            Clean => {
-                clear_screen();
-            }
-            Forward => {
-                self.forward()?;
-            }
-            Backward => {
-                self.backward()?;
-            }
-        }
-        Ok(())
-    }
 
-    pub fn switch(&mut self, is_next: bool) {
-        match is_next {
-            true => {
-                if self.current_audio_idx == self.audio_total {
-                    self.current_audio_idx = 1
-                } else {
-                    self.current_audio_idx += 1;
-                }
-            }
-            false => {
-                if self.current_audio_idx == 1 {
-                    self.current_audio_idx = self.audio_total;
-                } else {
-                    self.current_audio_idx -= 1;
-                }
-            }
-        }
-    }
-    pub fn forward(&mut self) -> AnyResult<()> {
-        let span = Duration::from_secs(5);
-        let target_pos = self.get_pos().saturating_add(span);
-        if (0..self.src_time).contains(&target_pos.as_secs()) {
-            self.seek(target_pos)?;
-        } else {
-            let target_pos = Duration::from_secs(self.src_time - 1);
-            self.seek(target_pos)?;
-        }
-        Ok(())
-    }
-    pub fn backward(&mut self) -> AnyResult<()> {
-        let span = Duration::from_secs(5);
-        let target_pos = self.get_pos().saturating_sub(span);
-        if (0..self.src_time).contains(&target_pos.as_secs()) {
-            self.seek(target_pos)?;
-        }
-        Ok(())
-    }
+
+
+    
+
 }
