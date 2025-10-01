@@ -2,8 +2,7 @@ use crate::{AnyResult, anyhow};
 use regex::Regex;
 use std::{
     fs::{self, File},
-    path::Path,
-    time::Duration,
+    path::Path, time::Duration,
 };
 use symphonia::core::{
     formats::FormatOptions, io::MediaSourceStream, meta::StandardTagKey, probe::Hint,
@@ -76,17 +75,7 @@ fn get_local_lrc(path: &Path) -> AnyResult<String> {
     }
 }
 /// 解析LRC歌词文本
-///
-/// # 格式支持
-/// 1.  标准歌词 (`[mm:ss.xx]Some text`)
-/// 2.  多时间戳歌词 (`[ts1][ts2]Some text`)
-///
-/// 支持标准LRC格式及扩展时间戳：
-/// `[mm:ss.SS]` 或 `[mm:ss:SSS]`
-///
-/// # 返回值
-/// 一个按时间排序的元组向量 `Vec<(Duration, String)>`，
-/// 其中每个元组代表一个时间点和对应的歌词。
+
 fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
     // 这个正则表达式只用于匹配和捕获一个时间戳, 不包含后面的文本部分
     let timestamp_rex = Regex::new(r"\[(\d{2}):(\d{2})[.:](\d{2,3})\]").unwrap();
@@ -109,9 +98,12 @@ fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
                     // 否则直接解析毫秒 (xxx)
                     millis_str.parse().unwrap_or(0)
                 };
-                Some(Duration::from_millis(
-                    minutes * 60 * 1000 + seconds * 1000 + millis,
-                ))
+                Some(
+                    Duration::from_millis(
+                        
+                        minutes * 60 * 1000 + seconds * 1000 + millis
+                    )
+                )
             })
             .collect();
         // 如果该行没有任何有效的时间戳 (例如元数据行 [ar: artist]) 则跳过
