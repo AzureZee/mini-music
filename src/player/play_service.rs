@@ -1,25 +1,16 @@
-use crate::{
-    anyhow, utils::*, view::*, AnyResult
-};
-use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
+use crate::{AnyResult, anyhow, utils::*};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use std::{
     collections::HashMap,
     fs::File,
-    io::{self, BufReader},
+    io::BufReader,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    thread,
     time::Duration,
 };
 
 /// CLI音乐播放器核心结构体
-pub struct Player {
+pub struct PlayCore {
     /// 音频输出设备的句柄，管理音频流的播放
     sink: rodio::Sink,
     /// 音频输出流句柄
@@ -41,11 +32,10 @@ pub struct Player {
     /// 退出标志
     should_exit: bool,
 }
-type SharedPlayer = Arc<Mutex<Player>>;
+pub type SharedCore = Arc<Mutex<PlayCore>>;
 
-
-impl Player {
-    /// 新建播放器Player实例
+impl PlayCore {
+    /// 新建播放器PlayCore实例
     pub fn new() -> AnyResult<Self> {
         // 获取链接默认音频设备输出流和其句柄
         let _stream_handle = OutputStreamBuilder::open_default_stream()?;
@@ -76,43 +66,6 @@ impl Player {
         Ok(())
     }
 
-    /// 运行播放器
-    pub fn run(player: Player) -> AnyResult<()> {
-        let shared_player = Arc::new(Mutex::new(player));
-        // 进入终端`raw mode`
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        // 隐藏光标以防止闪烁
-        execute!(stdout, cursor::Hide)?;
-        // 保存初始光标位置。
-        execute!(stdout, cursor::SavePosition)?;
-        let ui_handle = Player::ui_thread(Arc::clone(&shared_player));
-        let key_handle = Player::monitor_key_thread(Arc::clone(&shared_player));
-        // 主线程执行循环播放
-        while !shared_player.lock().unwrap().is_exit() {
-            {
-                let mut player = shared_player.lock().unwrap();
-                if player.is_empty() {
-                    switch(&mut player,true);
-                    player.playback()?;
-                }
-            }
-            thread::sleep(Duration::from_millis(200));
-        }
-        // 等待子线程结束
-        ui_handle.join().unwrap()?;
-        key_handle.join().unwrap()?;
-        // 退出终端`raw mode`
-        execute!(
-            io::stdout(),
-            cursor::RestorePosition, // 回到锚点
-            cursor::Show             // 最后显示光标
-        )?;
-        disable_raw_mode()?;
-
-        Ok(())
-    }
-
     pub fn decoder(&self, audio: &Path) -> AnyResult<Decoder<BufReader<File>>> {
         // 解码音频
         let file = BufReader::new(File::open(audio)?);
@@ -134,7 +87,7 @@ impl Player {
             Err(anyhow!("无效的音频索引"))
         }
     }
-    
+
     /// 播放指定索引的音频
     pub fn playback(&mut self) -> AnyResult<()> {
         self.hold_state_clear();
@@ -210,51 +163,4 @@ impl Player {
     pub fn exit(&mut self) {
         self.should_exit = true;
     }
-    /// 派生子线程, 刷新UI
-    fn ui_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
-        thread::spawn(move || -> AnyResult<()> {
-            while !shared_player.lock().unwrap().is_exit() {
-                {
-                    update_ui(&shared_player.lock().unwrap())?;
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-            Ok(())
-        })
-    }
-
-    /// 派生子线程, 监听键盘事件,调用`key_action`执行具体操作
-    fn monitor_key_thread(shared_player: SharedPlayer) -> thread::JoinHandle<AnyResult<()>> {
-        use Operation::*;
-        thread::spawn(move || -> AnyResult<()> {
-            while !shared_player.lock().unwrap().is_exit() {
-                if event::poll(Duration::from_millis(100))?
-                    && let Event::Key(key) = event::read()?
-                    && key.kind == KeyEventKind::Press
-                {
-                    let op = match key.code {
-                        KeyCode::Char(' ') => Some(TogglePaused),
-                        KeyCode::Char('c') => Some(Clean),
-                        KeyCode::Left => Some(Backward),
-                        KeyCode::Right => Some(Forward),
-                        KeyCode::Up => Some(Prev),
-                        KeyCode::Down => Some(Next),
-                        KeyCode::Esc => Some(Exit),
-                        _ => None,
-                    };
-                    if let Some(op) = op {
-                        let mut player = shared_player.lock().unwrap();
-                        key_action(&mut player,op)?;
-                    }
-                }
-            }
-            Ok(())
-        })
-    }
-
-
-
-
-    
-
 }

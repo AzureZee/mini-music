@@ -1,6 +1,5 @@
 use std::time::Duration;
-
-use crate::{player::Player, view::clear_screen, AnyResult};
+use crate::{AnyResult, player::PlayCore, view::clear_screen};
 
 /// 键盘操作映射
 ///
@@ -22,7 +21,7 @@ pub enum Operation {
     Clean,
 }
 /// 执行`Operation`变体对应的具体操作
-pub fn key_action(core: &mut Player, op: Operation) -> AnyResult<()> {
+pub fn key_action(core: &mut PlayCore, op: Operation) -> AnyResult<()> {
     use Operation::*;
     match op {
         TogglePaused => {
@@ -33,11 +32,11 @@ pub fn key_action(core: &mut Player, op: Operation) -> AnyResult<()> {
             }
         }
         Next => {
-            switch(core,true);
+            switch(core, true);
             core.playback()?;
         }
         Prev => {
-            switch(core,false);
+            switch(core, false);
             core.playback()?;
         }
         Exit => {
@@ -56,7 +55,7 @@ pub fn key_action(core: &mut Player, op: Operation) -> AnyResult<()> {
     }
     Ok(())
 }
-pub fn switch(core: &mut Player, is_next: bool) {
+pub fn switch(core: &mut PlayCore, is_next: bool) {
     match is_next {
         true => {
             if core.current_audio_idx == core.audio_total {
@@ -74,7 +73,7 @@ pub fn switch(core: &mut Player, is_next: bool) {
         }
     }
 }
-pub fn forward(core: &mut Player) -> AnyResult<()> {
+pub fn forward(core: &mut PlayCore) -> AnyResult<()> {
     let span = Duration::from_secs(5);
     let target_pos = core.get_pos().saturating_add(span);
     if (0..core.src_time).contains(&target_pos.as_secs()) {
@@ -85,7 +84,7 @@ pub fn forward(core: &mut Player) -> AnyResult<()> {
     }
     Ok(())
 }
-pub fn backward(core: &mut Player) -> AnyResult<()> {
+pub fn backward(core: &mut PlayCore) -> AnyResult<()> {
     let span = Duration::from_secs(5);
     let target_pos = core.get_pos().saturating_sub(span);
     if (0..core.src_time).contains(&target_pos.as_secs()) {
