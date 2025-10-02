@@ -1,12 +1,12 @@
 use crate::{AnyResult, player::PlayCore};
-use std::{
-    io::{self, Write},
-    time::Duration,
-};
 use colored::Colorize;
 use crossterm::{
     cursor, execute,
     terminal::{Clear, ClearType},
+};
+use std::{
+    io::{self, Write},
+    time::Duration,
 };
 
 /// 打印详细信息 + 进度条 + 歌词
@@ -103,14 +103,14 @@ fn update_progress_line(core: &PlayCore, current_pos: u64) -> String {
 fn update_info(core: &PlayCore, current_pos: u64) -> String {
     let minutes = current_pos / 60;
     let seconds = current_pos % 60;
-    let now_time = format!("{:02}:{:02}", minutes, seconds);
+    let now_time = format!("{:02}:{:02}", minutes, seconds).blue();
+    let total_time = core.total_time.green();
+    let index = core.current_audio_idx.to_string().blue();
+    let total = core.audio_total.to_string().yellow();
+    let name = core.file_name.blue();
     format!(
         "📀 {}/{} 🎧{} ⏳{}/{}",
-        core.current_audio_idx.to_string().blue(),
-        core.audio_total.to_string().yellow(),
-        core.file_name.blue(),
-        now_time.blue(),
-        core.total_time.green()
+        index, total, name, now_time, total_time
     )
 }
 

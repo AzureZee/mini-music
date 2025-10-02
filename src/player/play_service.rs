@@ -1,4 +1,4 @@
-use crate::{AnyResult, anyhow, utils::*};
+use crate::{AnyResult, utils::*};
 use rodio::{Decoder, OutputStream, OutputStreamBuilder, Source};
 use std::{
     collections::HashMap,
@@ -16,7 +16,7 @@ pub struct PlayCore {
     /// 音频输出流句柄
     _stream_handle: OutputStream,
     /// 音乐文件索引映射（索引 -> 文件元数据）
-    pub audio_list: Option<HashMap<u32, PathBuf>>,
+    pub audio_list: HashMap<u32, PathBuf>,
     /// 当前播放曲目索引
     pub current_audio_idx: u32,
     /// 当前播放文件名（缓存显示用）
@@ -46,7 +46,7 @@ impl PlayCore {
             _stream_handle,
             total_time: String::new(),
             file_name: String::new(),
-            audio_list: None,
+            audio_list: HashMap::new(),
             current_audio_idx: 1,
             audio_total: 0,
             src_time: 0,
@@ -58,47 +58,26 @@ impl PlayCore {
     /// 初始化播放器
     pub fn initial(&mut self, dir: &Path) -> AnyResult<()> {
         // 加载音频列表
-        self.audio_list = load_audio_list(dir);
+        self.audio_list = load_list(dir).expect("Error: No audio files found in the selected folder!");
         // 计算总曲目数
-        self.audio_total = self.audio_list.as_ref().unwrap().len() as u32;
+        self.audio_total = self.audio_list.len() as u32;
         // 执行首次播放
         self.playback()?;
         Ok(())
     }
 
-    pub fn decoder(&self, audio: &Path) -> AnyResult<Decoder<BufReader<File>>> {
-        // 解码音频
-        let file = BufReader::new(File::open(audio)?);
-        let source = Decoder::new(file)?;
-        Ok(source)
-    }
-    pub fn get_duration(&self, source: &Decoder<BufReader<File>>) -> u64 {
-        let src_duration = source
-            .total_duration()
-            .unwrap_or_else(|| Duration::from_secs(0));
-        src_duration.as_secs()
-    }
-    pub fn get_audio_path(&self) -> AnyResult<PathBuf> {
-        if let Some(audio_map) = &self.audio_list
-            && let Some(audio) = audio_map.get(&self.current_audio_idx)
-        {
-            Ok(audio.into())
-        } else {
-            Err(anyhow!("无效的音频索引"))
-        }
-    }
 
     /// 播放指定索引的音频
     pub fn playback(&mut self) -> AnyResult<()> {
         self.hold_state_clear();
-        //
-        let audio = self.get_audio_path()?;
-        // 尝试加载并解析歌词
+        // 获取要播放的音频路径
+        let audio = get_audio_path(&self.audio_list,self.current_audio_idx);
+        // 加载歌词
         self.lyrics = load_and_parse_lrc(&audio);
         // 解码音频
-        let source = self.decoder(&audio)?;
+        let source = decoder(&audio)?;
         // 获取音频时长
-        let src_time = self.get_duration(&source);
+        let src_time = get_duration(&source);
         let minutes = src_time / 60;
         let seconds = src_time % 60;
         self.total_time = format!("{:02}:{:02}", minutes, seconds);
@@ -112,7 +91,7 @@ impl PlayCore {
         Ok(())
     }
 
-    /// 定位到当前音频的指定位置
+    /// 定位到音频的指定位置
     pub fn seek(&mut self, target_pos: Duration) -> AnyResult<()> {
         self.playback()?;
         let _ = self.sink.try_seek(target_pos);
@@ -163,4 +142,18 @@ impl PlayCore {
     pub fn exit(&mut self) {
         self.should_exit = true;
     }
+}
+/// 解码音频
+pub fn decoder(audio: &Path) -> AnyResult<Decoder<BufReader<File>>> {
+    let file = BufReader::new(File::open(audio)?);
+    let source = Decoder::new(file)?;
+    Ok(source)
+}
+
+/// 获取音频时长
+pub fn get_duration(source: &Decoder<BufReader<File>>) -> u64 {
+    let src_duration = source
+        .total_duration()
+        .unwrap_or_else(|| Duration::from_secs(0));
+    src_duration.as_secs()
 }

@@ -1,29 +1,38 @@
-use crate::{AnyResult, anyhow};
+use crate::AnyResult;
 use regex::Regex;
 use std::{
     fs::{self, File},
-    path::Path, time::Duration,
+    path::Path,
+    time::Duration,
 };
 use symphonia::core::{
     formats::FormatOptions, io::MediaSourceStream, meta::StandardTagKey, probe::Hint,
 };
+const NOLRC: &str = "Enjoy Music";
 
+/// 用于在没有歌词时返回一个默认值
+fn default_val() -> Option<Vec<(Duration, String)>> {
+    let mut default_val = Vec::new();
+    let v = (Duration::from_secs(0), NOLRC.to_string());
+    default_val.push(v);
+    Some(default_val)
+}
 ///  加载并解析一个音频文件的歌词
 pub fn load_and_parse_lrc(path: &Path) -> Option<Vec<(Duration, String)>> {
     match get_lyrics(path) {
-        Ok(lrc_string) => {
-            let parsed = parse_lrc(&lrc_string);
-            if parsed.is_empty() {
-                None
+        Ok(lrc_text) => {
+            if lrc_text == NOLRC {
+                default_val()
             } else {
-                Some(parsed)
+                let parsed = parse_lrc(&lrc_text);
+                if parsed.is_empty() {
+                    default_val()
+                } else {
+                    Some(parsed)
+                }
             }
         }
-        Err(_) => {
-            // 未找到元数据
-            // println!("{:?}", e);
-            None
-        }
+        Err(_) => default_val(),
     }
 }
 
@@ -71,7 +80,7 @@ fn get_local_lrc(path: &Path) -> AnyResult<String> {
         let lrc_content = fs::read_to_string(lrc_path)?;
         Ok(lrc_content)
     } else {
-        Err(anyhow!("未找到歌词"))
+        Ok(NOLRC.to_string())
     }
 }
 /// 解析LRC歌词文本
@@ -98,12 +107,9 @@ fn parse_lrc(lrc_text: &str) -> Vec<(Duration, String)> {
                     // 否则直接解析毫秒 (xxx)
                     millis_str.parse().unwrap_or(0)
                 };
-                Some(
-                    Duration::from_millis(
-                        
-                        minutes * 60 * 1000 + seconds * 1000 + millis
-                    )
-                )
+                Some(Duration::from_millis(
+                    minutes * 60 * 1000 + seconds * 1000 + millis,
+                ))
             })
             .collect();
         // 如果该行没有任何有效的时间戳 (例如元数据行 [ar: artist]) 则跳过
